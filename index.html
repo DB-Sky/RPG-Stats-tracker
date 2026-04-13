@@ -103,7 +103,6 @@
     <button onclick="addExtra('equipements')">+ Équipement</button>
     <button onclick="addExtra('vehicules')">+ Véhicule</button>
     <button onclick="exportJson()">💾 Export .json</button>
-    <button class="danger" onclick="resetAll()">🗑️ Reset principal</button>
     <label class="fit">📂 Import .json
       <input type="file" accept="application/json" onchange="importJson(event)" style="display:none" />
     </label>
@@ -151,23 +150,6 @@
       return idx >= 0 ? idx + 1 : RANKS.length;
     };
     const valueToRank = (n) => RANKS[Math.max(0, Math.min(RANKS.length - 1, n - 1))];
-
-    function formatLarge(value) {
-      const n = Number(value) || 0;
-      const sign = n < 0 ? "-" : "";
-      const abs = Math.abs(n);
-      if (abs < 1000) return `${Math.floor(n)}`;
-      const units = ["K", "M", "G", "T", "P", "E", "Z", "Y"];
-      let scaled = abs;
-      let unitIndex = -1;
-      while (scaled >= 1000 && unitIndex < units.length - 1) {
-        scaled /= 1000;
-        unitIndex++;
-      }
-      const shown = scaled >= 100 ? scaled.toFixed(0) : scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2);
-      const compact = shown.replace(/\.?0+$/, "");
-      return `${sign}${compact}${units[unitIndex]}`;
-    }
 
     function computeProgress(totalXp) {
       const xp = Math.max(1, Number(totalXp) || 1);
@@ -242,14 +224,11 @@
       const v = computeProgress(state.personnage.stats.Vitesse.xp);
       const f = computeProgress(state.personnage.stats.Force.xp);
       const c = computeProgress(state.personnage.stats.Constitution.xp);
-      const fcSum = Math.max(1, (f.rankValue + c.rankValue));
-      const speedPower = v.xp * v.level;
-      const base = v.rankValue <= fcSum
-        ? speedPower * v.rankValue
-        : speedPower * fcSum;
+      const denominator = v.rankValue / Math.max(1, (f.rankValue + c.rankValue));
+      const base = denominator === 0 ? 0 : (v.xp * v.level * v.rankValue) / denominator;
       const total = Math.floor(base * 100);
       const parts = Object.fromEntries(Object.entries(AC_PARTS).map(([p, ratio]) => [p, Math.floor(total * ratio)]));
-      return { total, general: Math.floor(total * 0.36), parts, fcSum, vRank: v.rankValue };
+      return { total, general: Math.floor(total * 0.36), parts };
     }
 
     function globalRankValue() {
@@ -278,8 +257,8 @@
         return `
           <div class="card">
             <h4>${stat}</h4>
-            <div>XP actuel: <strong>${formatLarge(p.xp)}</strong> <span class="small">(${p.xp})</span></div>
-            <div>XP vers niveau/rank suivant: <strong>${nextDisplay === "—" ? "—" : formatLarge(nextDisplay)}</strong>${nextDisplay === "—" ? "" : ` <span class="small">(${nextDisplay})</span>`}</div>
+            <div>XP actuel: <strong>${p.xp}</strong></div>
+            <div>XP vers niveau/rank suivant: <strong>${nextDisplay}</strong></div>
             <div>Niveau: <strong>${p.level}</strong></div>
             <div>Rank: <strong>${p.rank}</strong></div>
           </div>`;
@@ -288,13 +267,12 @@
       const hpHtml = Object.entries(hp.parts).map(([part, val]) => `
         <div class="card">
           <div>${part}</div>
-          <div class="small">HP max: ${formatLarge(val.max)} (${val.max})</div>
+          <div class="small">HP max: ${val.max}</div>
           <input type="number" min="0" max="${val.max}" value="${val.current}"
             oninput="state.personnage.hpCurrent['${part}']=Number(this.value)||0; save();" />
-          <div class="small">HP actuel: ${formatLarge(val.current)} (${val.current})</div>
         </div>`).join("");
 
-      const acHtml = Object.entries(ac.parts).map(([part, value]) => `<div class="card">${part}: <strong>${formatLarge(value)}</strong> <span class="small">(${value})</span></div>`).join("");
+      const acHtml = Object.entries(ac.parts).map(([part, value]) => `<div class="card">${part}: <strong>${value}</strong></div>`).join("");
 
       container.innerHTML = `
         <h2>🧙 Personnage <span class="badge">Rank global: ${rankGlobal}</span></h2>
@@ -310,22 +288,6 @@
         <h3>Statistiques</h3>
         <div class="grid">${statsHtml}</div>
 
-        <h3>HP (total ${formatLarge(hp.total)} / ${hp.total})</h3>
-        <div class="body-grid">${hpHtml}</div>
-
-        <h3>AC</h3>
-        <div class="body-grid">${acHtml}</div>
-        <div class="card">
-          AC général: <strong>${formatLarge(ac.general)}</strong> <span class="small">(${ac.general})</span>
-          <div class="small">36% du total AC: ${formatLarge(ac.total)} (${ac.total})</div>
-          <div class="small">Formule: si Rankv ≤ (Rankf + Rankc) → AC = XPv × Lv × Rankv</div>
-          <div class="small">Sinon (pénalisation): AC = XPv × Lv × (Rankf + Rankc)</div>
-        </div>
-
-        <h3>Notes</h3>
-        ${renderTextArray(state.personnage.notes, "state.personnage.notes")}
-        <button onclick="state.personnage.notes.push(''); render();">+ Ajouter une note</button>
-
         <div class="card">
           <h4>Ajouter de l'XP</h4>
           <div class="line">
@@ -334,6 +296,17 @@
             <button class="fit" onclick="addXP()">Ajouter</button>
           </div>
         </div>
+
+        <h3>HP (total ${hp.total})</h3>
+        <div class="body-grid">${hpHtml}</div>
+
+        <h3>AC</h3>
+        <div class="body-grid">${acHtml}</div>
+        <div class="card">AC général: <strong>${ac.general}</strong> <span class="small">(36% du total AC: ${ac.total})</span></div>
+
+        <h3>Notes</h3>
+        ${renderTextArray(state.personnage.notes, "state.personnage.notes")}
+        <button onclick="state.personnage.notes.push(''); render();">+ Ajouter une note</button>
       `;
     }
 
@@ -386,13 +359,6 @@
 
     function toggleSection(id) {
       document.getElementById(id).classList.toggle("hidden");
-    }
-
-    function resetAll() {
-      if (!confirm("Confirmer la réinitialisation complète ? Toutes les données seront supprimées.")) return;
-      state = makeState();
-      localStorage.removeItem(STORAGE_KEY);
-      render();
     }
 
     function exportJson() {
