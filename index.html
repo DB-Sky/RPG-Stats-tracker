@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RPG Tracker amélioré</title>
+  <style>
+    :root {
+      --bg: #13151d;
+      --panel: #1d2130;
+      --panel-2: #252a3d;
+      --text: #f2f5ff;
+      --muted: #aeb5ce;
+      --accent: #71a3ff;
+      --danger: #ff6b7a;
+      --border: #3a4364;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px;
+      background: #0d1018;
+      border-bottom: 1px solid var(--border);
+    }
+    button, input, select, textarea {
+      font: inherit;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 10px;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    button.danger:hover { border-color: var(--danger); color: var(--danger); }
+    .badge {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-left: 6px;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 12px;
+      padding: 12px;
+      align-items: start;
+    }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      min-width: 300px;
+      max-width: 100%;
+      resize: horizontal;
+      overflow: auto;
+    }
+    .hidden { display: none; }
+    h2, h3, h4 { margin: 8px 0; }
+    h2 { display: flex; align-items: center; gap: 8px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      background: #1a1f2e;
+    }
+    .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .line > * { flex: 1; }
+    .line .fit { flex: 0 0 auto; }
+    textarea { min-height: 70px; width: 100%; }
+    .body-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 6px;
+    }
+    .small { color: var(--muted); font-size: .86rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <button onclick="toggleSection('personnage')">🧙 Personnage</button>
+    <button onclick="toggleSection('compagnons')">🧑‍🤝‍🧑 Compagnons</button>
+    <button onclick="toggleSection('equipements')">🧰 Équipement</button>
+    <button onclick="toggleSection('vehicules')">🚗 Véhicule</button>
+    <button title="Réservé au futur système de dés">🎲 Lancer de dés (bientôt)</button>
+    <button onclick="addExtra('compagnons')">+ Compagnon</button>
+    <button onclick="addExtra('equipements')">+ Équipement</button>
+    <button onclick="addExtra('vehicules')">+ Véhicule</button>
+    <button onclick="exportJson()">💾 Export .json</button>
+    <button class="danger" onclick="resetAll()">🗑️ Reset principal</button>
+    <label class="fit">📂 Import .json
+      <input type="file" accept="application/json" onchange="importJson(event)" style="display:none" />
+    </label>
+  </header>
+
+  <main class="workspace">
+    <section id="personnage" class="section"></section>
+    <section id="compagnons" class="section"></section>
+    <section id="equipements" class="section"></section>
+    <section id="vehicules" class="section"></section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "rpg_tracker_v2";
+    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse", "Charisme"];
+    const MULTIPLIERS = [2, 2, 3, 2, 3, 2, 2, 2, 3];
+    const XP_UNITS = [
+      { key: "", label: "Rien (10^0)", value: 1 },
+      { key: "K", label: "Kilo (10^3)", value: 1e3 },
+      { key: "M", label: "Méga (10^6)", value: 1e6 },
+      { key: "G", label: "Giga (10^9)", value: 1e9 },
+      { key: "T", label: "Téra (10^12)", value: 1e12 },
+      { key: "P", label: "Péta (10^15)", value: 1e15 },
+      { key: "E", label: "Exa (10^18)", value: 1e18 },
+      { key: "Z", label: "Zetta (10^21)", value: 1e21 },
+      { key: "Y", label: "Yotta (10^24)", value: 1e24 }
+    ];
+    const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
+    const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
+    const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
+    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined / Non déterminé"];
+
+    const HP_PARTS = { Tête: 0.10, Torse: 0.20, "Bras gauche": 0.12, "Bras droit": 0.12, "Main gauche": 0.05, "Main droite": 0.05, "Jambe gauche": 0.13, "Jambe droite": 0.13, "Pied gauche": 0.05, "Pied droit": 0.05 };
+    const AC_PARTS = { Tête: 0.05, Torse: 0.05, "Bras gauche": 0.10, "Bras droit": 0.10, "Main gauche": 0.04, "Main droite": 0.04, "Jambe gauche": 0.10, "Jambe droite": 0.10, "Pied gauche": 0.03, "Pied droit": 0.03 };
+
+    const defaultItem = () => ({ nom: "", description: "", notes: "" });
+    const makeState = () => ({
+      personnage: {
+        nom: "",
+        bio: [""],
+        notes: [""],
+        stats: Object.fromEntries(STATS.map(s => [s, { xp: 1 }])),
+        hpCurrent: {}
+      },
+      sections: {
+        compagnons: { base: defaultItem(), extras: [] },
+        equipements: { base: defaultItem(), extras: [] },
+        vehicules: { base: defaultItem(), extras: [] }
+      }
+    });
+
+    let state = makeState();
+
+    const rankToValue = (rankLabel) => {
+      const idx = RANKS.indexOf(rankLabel);
+      return idx >= 0 ? idx + 1 : RANKS.length;
+    };
+    const valueToRank = (n) => RANKS[Math.max(0, Math.min(RANKS.length - 1, n - 1))];
+
+    function formatLarge(value) {
+      const n = Number(value) || 0;
+      const sign = n < 0 ? "-" : "";
+      const abs = Math.abs(n);
+      if (abs < 1000) return `${Math.floor(n)}`;
+      const units = ["K", "M", "G", "T", "P", "E", "Z", "Y"];
+      let scaled = abs;
+      let unitIndex = -1;
+      while (scaled >= 1000 && unitIndex < units.length - 1) {
+        scaled /= 1000;
+        unitIndex++;
+      }
+      const shown = scaled >= 100 ? scaled.toFixed(0) : scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2);
+      const compact = shown.replace(/\.?0+$/, "");
+      return `${sign}${compact}${units[unitIndex]}`;
+    }
+
+    function computeProgress(totalXp) {
+      const xp = Math.max(1, Number(totalXp) || 1);
+      let temp = xp;
+      let level = 1;
+      let rankIdx = 0;
+      while (true) {
+        const need = MULTIPLIERS[level - 1] || 2;
+        if (temp < need) break;
+        temp /= need;
+        level++;
+        if (level > 10) {
+          level = 1;
+          rankIdx++;
+          temp /= 2;
+        }
+        if (rankIdx >= RANKS.length - 1) {
+          rankIdx = RANKS.length - 1;
+          break;
+        }
+      }
+      const rank = RANKS[rankIdx] || RANKS[RANKS.length - 1];
+      const xpNext = nextXpToAdvance(xp, level, rank);
+      return { xp, level, rank, rankValue: rankToValue(rank), xpNext };
+    }
+
+    function nextXpToAdvance(currentXp, currentLevel, currentRank) {
+      let probe = Math.floor(currentXp) + 1;
+      const limit = probe + 100000;
+      while (probe < limit) {
+        const p = computeProgressFast(probe);
+        if (p.level !== currentLevel || p.rank !== currentRank) return probe;
+        probe++;
+      }
+      return null;
+    }
+
+    function computeProgressFast(totalXp) {
+      let temp = Math.max(1, Number(totalXp) || 1);
+      let level = 1;
+      let rankIdx = 0;
+      while (true) {
+        const need = MULTIPLIERS[level - 1] || 2;
+        if (temp < need) break;
+        temp /= need;
+        level++;
+        if (level > 10) {
+          level = 1;
+          rankIdx++;
+          temp /= 2;
+        }
+        if (rankIdx >= RANKS.length - 1) break;
+      }
+      return { level, rank: RANKS[Math.min(rankIdx, RANKS.length - 1)] };
+    }
+
+    function computeHP() {
+      const con = computeProgress(state.personnage.stats.Constitution.xp);
+      const c = con.xp * con.level * con.rankValue;
+      const total = Math.floor(c * 100);
+      const parts = {};
+      Object.entries(HP_PARTS).forEach(([part, ratio]) => {
+        const max = Math.floor(total * ratio);
+        if (state.personnage.hpCurrent[part] == null) state.personnage.hpCurrent[part] = max;
+        state.personnage.hpCurrent[part] = Math.max(0, Math.min(Number(state.personnage.hpCurrent[part]) || 0, max));
+        parts[part] = { max, current: state.personnage.hpCurrent[part] };
+      });
+      return { total, parts };
+    }
+
+    function computeAC() {
+      const v = computeProgress(state.personnage.stats.Vitesse.xp);
+      const f = computeProgress(state.personnage.stats.Force.xp);
+      const c = computeProgress(state.personnage.stats.Constitution.xp);
+      const fcSum = Math.max(1, (f.rankValue + c.rankValue));
+      const speedPower = v.xp * v.level;
+      const base = v.rankValue <= fcSum
+        ? speedPower * v.rankValue
+        : speedPower * fcSum;
+      const total = Math.floor(base * 100);
+      const parts = Object.fromEntries(Object.entries(AC_PARTS).map(([p, ratio]) => [p, Math.floor(total * ratio)]));
+      return { total, general: Math.floor(total * 0.36), parts, fcSum, vRank: v.rankValue };
+    }
+
+    function globalRankValue() {
+      const sum = STATS.reduce((acc, stat) => acc + computeProgress(state.personnage.stats[stat].xp).rankValue, 0);
+      return Math.floor(sum / STATS.length);
+    }
+
+    function renderTextArray(items, onChangePrefix) {
+      return items.map((txt, i) => `
+        <div class="card">
+          <textarea oninput="${onChangePrefix}[${i}] = this.value; save();">${escapeHtml(txt)}</textarea>
+          <div class="line"><button class="danger" onclick="${onChangePrefix}.splice(${i},1); if(!${onChangePrefix}.length) ${onChangePrefix}.push(''); render();">Supprimer ce champ</button></div>
+        </div>`).join("");
+    }
+
+    function renderPersonnage() {
+      const container = document.getElementById("personnage");
+      const hp = computeHP();
+      const ac = computeAC();
+      const rankGlobalVal = globalRankValue();
+      const rankGlobal = valueToRank(rankGlobalVal);
+
+      const statsHtml = STATS.map(stat => {
+        const p = computeProgress(state.personnage.stats[stat].xp);
+        const nextDisplay = p.xpNext ? Math.max(0, p.xpNext - p.xp) : "—";
+        return `
+          <div class="card">
+            <h4>${stat}</h4>
+            <div>XP actuel: <strong>${formatLarge(p.xp)}</strong> <span class="small">(${p.xp})</span></div>
+            <div>XP vers niveau/rank suivant: <strong>${nextDisplay === "—" ? "—" : formatLarge(nextDisplay)}</strong>${nextDisplay === "—" ? "" : ` <span class="small">(${nextDisplay})</span>`}</div>
+            <div>Niveau: <strong>${p.level}</strong></div>
+            <div>Rank: <strong>${p.rank}</strong></div>
+          </div>`;
+      }).join("");
+
+      const hpHtml = Object.entries(hp.parts).map(([part, val]) => `
+        <div class="card">
+          <div>${part}</div>
+          <div class="small">HP max: ${formatLarge(val.max)} (${val.max})</div>
+          <input type="number" min="0" max="${val.max}" value="${val.current}"
+            oninput="state.personnage.hpCurrent['${part}']=Number(this.value)||0; save();" />
+          <div class="small">HP actuel: ${formatLarge(val.current)} (${val.current})</div>
+        </div>`).join("");
+
+      const acHtml = Object.entries(ac.parts).map(([part, value]) => `<div class="card">${part}: <strong>${formatLarge(value)}</strong> <span class="small">(${value})</span></div>`).join("");
+
+      container.innerHTML = `
+        <h2>🧙 Personnage <span class="badge">Rank global: ${rankGlobal}</span></h2>
+        <div class="card">
+          <label>Nom du personnage</label>
+          <input value="${escapeHtml(state.personnage.nom)}" oninput="state.personnage.nom=this.value; save();" />
+        </div>
+
+        <h3>Description / Bio</h3>
+        ${renderTextArray(state.personnage.bio, "state.personnage.bio")}
+        <button onclick="state.personnage.bio.push(''); render();">+ Ajouter un champ Bio</button>
+
+        <h3>Statistiques</h3>
+        <div class="grid">${statsHtml}</div>
+
+        <h3>HP (total ${formatLarge(hp.total)} / ${hp.total})</h3>
+        <div class="body-grid">${hpHtml}</div>
+
+        <h3>AC</h3>
+        <div class="body-grid">${acHtml}</div>
+        <div class="card">
+          AC général: <strong>${formatLarge(ac.general)}</strong> <span class="small">(${ac.general})</span>
+          <div class="small">36% du total AC: ${formatLarge(ac.total)} (${ac.total})</div>
+          <div class="small">Formule: si Rankv ≤ (Rankf + Rankc) → AC = XPv × Lv × Rankv</div>
+          <div class="small">Sinon (pénalisation): AC = XPv × Lv × (Rankf + Rankc)</div>
+        </div>
+
+        <h3>Notes</h3>
+        ${renderTextArray(state.personnage.notes, "state.personnage.notes")}
+        <button onclick="state.personnage.notes.push(''); render();">+ Ajouter une note</button>
+
+        <div class="card">
+          <h4>Ajouter de l'XP</h4>
+          <div class="line">
+            <select id="xpStat">${STATS.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
+            <input id="xpValue" type="number" min="0" value="1" />
+            <select id="xpUnit">
+              ${XP_UNITS.map(u => `<option value="${u.value}">${u.label}</option>`).join("")}
+            </select>
+            <button class="fit" onclick="addXP()">Ajouter</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEntitySection(type, title, icon) {
+      const wrap = document.getElementById(type);
+      const section = state.sections[type];
+      const renderItem = (item, label, removable, onPath, idx = -1) => `
+        <div class="card">
+          <h4>${label}</h4>
+          <label>Nom</label>
+          <input value="${escapeHtml(item.nom)}" oninput="${onPath}.nom=this.value; save();" />
+          <label>Description</label>
+          <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
+          <label>Notes</label>
+          <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
+          ${removable ? `<button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer (copie)</button>` : "<div class='small'>Template de base (non supprimable)</div>"}
+        </div>`;
+
+      const basePath = `state.sections.${type}.base`;
+      const extrasHtml = section.extras.map((item, i) => renderItem(item, `${title} #${i + 1} (copie)`, true, `state.sections.${type}.extras[${i}]`, i)).join("");
+      wrap.innerHTML = `
+        <h2>${icon} ${title}</h2>
+        ${renderItem(section.base, `${title} de base`, false, basePath)}
+        ${extrasHtml || "<div class='small'>Aucune copie ajoutée.</div>"}
+      `;
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
+    }
+
+    function addXP() {
+      const stat = document.getElementById("xpStat").value;
+      const xp = Number(document.getElementById("xpValue").value) || 0;
+      const unit = Number(document.getElementById("xpUnit").value) || 1;
+      const totalToAdd = xp * unit;
+      if (!stat || xp < 0) return;
+      state.personnage.stats[stat].xp = Math.max(1, Math.floor(state.personnage.stats[stat].xp + totalToAdd));
+      render();
+    }
+
+    function addExtra(type) {
+      state.sections[type].extras.push(JSON.parse(JSON.stringify(state.sections[type].base)));
+      render();
+    }
+
+    function removeExtra(type, idx) {
+      if (!confirm("Supprimer cette section copiée ?")) return;
+      state.sections[type].extras.splice(idx, 1);
+      render();
+    }
+
+    function toggleSection(id) {
+      document.getElementById(id).classList.toggle("hidden");
+    }
+
+    function resetAll() {
+      if (!confirm("Confirmer la réinitialisation complète ? Toutes les données seront supprimées.")) return;
+      state = makeState();
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    }
+
+    function exportJson() {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "rpg-tracker-save.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function importJson(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          state = normalizeState(parsed);
+          render();
+        } catch {
+          alert("Fichier JSON invalide.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function normalizeState(parsed) {
+      const base = makeState();
+      const merged = { ...base, ...parsed };
+      merged.personnage = { ...base.personnage, ...(parsed?.personnage || {}) };
+      merged.personnage.stats = { ...base.personnage.stats, ...(parsed?.personnage?.stats || {}) };
+      for (const stat of STATS) {
+        merged.personnage.stats[stat] = { xp: Math.max(1, Number(merged.personnage.stats[stat]?.xp) || 1) };
+      }
+      merged.personnage.bio = Array.isArray(merged.personnage.bio) && merged.personnage.bio.length ? merged.personnage.bio : [""];
+      merged.personnage.notes = Array.isArray(merged.personnage.notes) && merged.personnage.notes.length ? merged.personnage.notes : [""];
+      merged.personnage.hpCurrent = { ...(parsed?.personnage?.hpCurrent || {}) };
+      merged.sections = { ...base.sections, ...(parsed?.sections || {}) };
+      for (const type of ["compagnons", "equipements", "vehicules"]) {
+        merged.sections[type] = {
+          base: { ...defaultItem(), ...(merged.sections[type]?.base || {}) },
+          extras: Array.isArray(merged.sections[type]?.extras) ? merged.sections[type].extras.map(x => ({ ...defaultItem(), ...x })) : []
+        };
+      }
+      return merged;
+    }
+
+    function save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) state = normalizeState(JSON.parse(raw));
+      } catch {}
+    }
+
+    function render() {
+      renderPersonnage();
+      renderEntitySection("compagnons", "Compagnons", "🧑‍🤝‍🧑");
+      renderEntitySection("equipements", "Équipement", "🧰");
+      renderEntitySection("vehicules", "Véhicule", "🚗");
+      save();
+    }
+
+    load();
+    render();
+  </script>
+</body>
+</html>
