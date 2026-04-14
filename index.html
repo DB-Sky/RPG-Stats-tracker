@@ -167,6 +167,7 @@
     });
 
     let state = makeState();
+    const nextXpCache = new Map();
 
     const rankToValue = (rankLabel) => {
       const idx = RANKS.indexOf(rankLabel);
@@ -234,6 +235,8 @@
     function nextXpToAdvance(currentXp, currentLevel, currentRank) {
       if (currentRank === RANKS[RANKS.length - 1]) return null;
       const xp = parseStoredXp(currentXp);
+      const cacheKey = `${xp.toString()}|${currentLevel}|${currentRank}`;
+      if (nextXpCache.has(cacheKey)) return nextXpCache.get(cacheKey);
       const hasChanged = (candidateXp) => {
         const p = computeProgressCore(candidateXp);
         return p.level !== currentLevel || p.rank !== currentRank;
@@ -253,6 +256,7 @@
           low = mid + 1n;
         }
       }
+      nextXpCache.set(cacheKey, low);
       return low;
     }
 
@@ -556,6 +560,7 @@
     }
 
     function render() {
+      nextXpCache.clear();
       renderPersonnage();
       renderCompagnons();
       renderEntitySection("equipements", "Équipement", "🧰");
