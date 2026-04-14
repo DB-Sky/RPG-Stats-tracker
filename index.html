@@ -120,6 +120,17 @@
     const STORAGE_KEY = "rpg_tracker_v2";
     const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse", "Charisme"];
     const MULTIPLIERS = [2, 2, 3, 2, 3, 2, 2, 2, 3];
+    const XP_UNITS = [
+      { key: "", label: "Rien (10^0)", value: 1 },
+      { key: "K", label: "Kilo (10^3)", value: 1e3 },
+      { key: "M", label: "Méga (10^6)", value: 1e6 },
+      { key: "G", label: "Giga (10^9)", value: 1e9 },
+      { key: "T", label: "Téra (10^12)", value: 1e12 },
+      { key: "P", label: "Péta (10^15)", value: 1e15 },
+      { key: "E", label: "Exa (10^18)", value: 1e18 },
+      { key: "Z", label: "Zetta (10^21)", value: 1e21 },
+      { key: "Y", label: "Yotta (10^24)", value: 1e24 }
+    ];
     const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
     const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
     const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
@@ -182,7 +193,7 @@
         if (level > 10) {
           level = 1;
           rankIdx++;
-          temp /= rankIdx + 1;
+          temp /= 2;
         }
         if (rankIdx >= RANKS.length - 1) {
           rankIdx = RANKS.length - 1;
@@ -217,7 +228,7 @@
         if (level > 10) {
           level = 1;
           rankIdx++;
-          temp /= rankIdx + 1;
+          temp /= 2;
         }
         if (rankIdx >= RANKS.length - 1) break;
       }
@@ -331,6 +342,9 @@
           <div class="line">
             <select id="xpStat">${STATS.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
             <input id="xpValue" type="number" min="0" value="1" />
+            <select id="xpUnit">
+              ${XP_UNITS.map(u => `<option value="${u.value}">${u.label}</option>`).join("")}
+            </select>
             <button class="fit" onclick="addXP()">Ajouter</button>
           </div>
         </div>
@@ -368,8 +382,10 @@
     function addXP() {
       const stat = document.getElementById("xpStat").value;
       const xp = Number(document.getElementById("xpValue").value) || 0;
+      const unit = Number(document.getElementById("xpUnit").value) || 1;
+      const totalToAdd = xp * unit;
       if (!stat || xp < 0) return;
-      state.personnage.stats[stat].xp = Math.max(1, Math.floor(state.personnage.stats[stat].xp + xp));
+      state.personnage.stats[stat].xp = Math.max(1, Math.floor(state.personnage.stats[stat].xp + totalToAdd));
       render();
     }
 
