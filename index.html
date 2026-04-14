@@ -121,15 +121,15 @@
     const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse", "Charisme"];
     const MULTIPLIERS = [2, 2, 3, 2, 3, 2, 2, 2, 3];
     const XP_UNITS = [
-      { key: "", label: "Rien (10^0)", value: 1 },
-      { key: "K", label: "Kilo (10^3)", value: 1e3 },
-      { key: "M", label: "Méga (10^6)", value: 1e6 },
-      { key: "G", label: "Giga (10^9)", value: 1e9 },
-      { key: "T", label: "Téra (10^12)", value: 1e12 },
-      { key: "P", label: "Péta (10^15)", value: 1e15 },
-      { key: "E", label: "Exa (10^18)", value: 1e18 },
-      { key: "Z", label: "Zetta (10^21)", value: 1e21 },
-      { key: "Y", label: "Yotta (10^24)", value: 1e24 }
+      { key: "", label: "Rien (10^0)", value: 1n },
+      { key: "K", label: "Kilo (10^3)", value: 1000n },
+      { key: "M", label: "Méga (10^6)", value: 1000000n },
+      { key: "G", label: "Giga (10^9)", value: 1000000000n },
+      { key: "T", label: "Téra (10^12)", value: 1000000000000n },
+      { key: "P", label: "Péta (10^15)", value: 1000000000000000n },
+      { key: "E", label: "Exa (10^18)", value: 1000000000000000000n },
+      { key: "Z", label: "Zetta (10^21)", value: 1000000000000000000000n },
+      { key: "Y", label: "Yotta (10^24)", value: 1000000000000000000000000n }
     ];
     const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
     const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
@@ -140,11 +140,21 @@
     const AC_PARTS = { Tête: 0.05, Torse: 0.05, "Bras gauche": 0.10, "Bras droit": 0.10, "Main gauche": 0.04, "Main droite": 0.04, "Jambe gauche": 0.10, "Jambe droite": 0.10, "Pied gauche": 0.03, "Pied droit": 0.03 };
 
     const defaultItem = () => ({ nom: "", description: "", notes: "" });
+    const parseStoredXp = (value) => {
+      if (typeof value === "bigint") return value > 0n ? value : 1n;
+      if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+        const parsed = BigInt(value.trim());
+        return parsed > 0n ? parsed : 1n;
+      }
+      const fallback = Number(value);
+      if (!Number.isFinite(fallback)) return 1n;
+      return BigInt(Math.max(1, Math.floor(fallback)));
+    };
     const makeCharacter = () => ({
       nom: "",
       bio: [""],
       notes: [""],
-      stats: Object.fromEntries(STATS.map(s => [s, { xp: 1 }])),
+      stats: Object.fromEntries(STATS.map(s => [s, { xp: "1" }])),
       hpCurrent: {}
     });
     const makeState = () => ({
@@ -165,7 +175,7 @@
     const valueToRank = (n) => RANKS[Math.max(0, Math.min(RANKS.length - 1, n - 1))];
 
     function formatLarge(value) {
-      const n = Number(value) || 0;
+      const n = typeof value === "bigint" ? Number(value) : Number(value) || 0;
       const sign = n < 0 ? "-" : "";
       const abs = Math.abs(n);
       if (abs < 1000) return `${Math.floor(n)}`;
@@ -182,18 +192,19 @@
     }
 
     function formatRaw(value) {
+      if (typeof value === "bigint") return value.toString();
       const n = Number(value) || 0;
       return n.toLocaleString("fr-FR", { useGrouping: false, maximumFractionDigits: 0 });
     }
 
     function computeProgress(totalXp) {
-      const xp = Math.max(1, Number(totalXp) || 1);
+      const xp = parseStoredXp(totalXp);
       let temp = xp;
       let level = 1;
       let rankIdx = 0;
       while (true) {
         if (level <= 9) {
-          const need = MULTIPLIERS[level - 1];
+          const need = BigInt(MULTIPLIERS[level - 1]);
           if (temp < need) break;
           temp /= need;
           level++;
@@ -203,7 +214,7 @@
         if (rankIdx >= RANKS.length - 1) break;
         level = 1;
         rankIdx++;
-        temp /= 2;
+        temp /= 2n;
 
         if (rankIdx >= RANKS.length - 1) {
           rankIdx = RANKS.length - 1;
@@ -217,14 +228,14 @@
 
     function nextXpToAdvance(currentXp, currentLevel, currentRank) {
       if (currentRank === RANKS[RANKS.length - 1]) return null;
-      const xp = Math.max(1, Math.floor(Number(currentXp) || 1));
-      const needMultiplier = currentLevel <= 9 ? MULTIPLIERS[currentLevel - 1] : 1;
+      const xp = parseStoredXp(currentXp);
+      const needMultiplier = BigInt(currentLevel <= 9 ? MULTIPLIERS[currentLevel - 1] : 1);
       return xp * needMultiplier;
     }
 
     function computeHP(entity) {
       const con = computeProgress(entity.stats.Constitution.xp);
-      const c = con.xp * con.level * con.rankValue;
+      const c = Number(con.xp) * con.level * con.rankValue;
       const total = Math.floor(c * 100);
       const parts = {};
       Object.entries(HP_PARTS).forEach(([part, ratio]) => {
@@ -241,7 +252,7 @@
       const f = computeProgress(entity.stats.Force.xp);
       const c = computeProgress(entity.stats.Constitution.xp);
       const fcSum = Math.max(1, (f.rankValue + c.rankValue));
-      const speedPower = v.xp * v.level;
+      const speedPower = Number(v.xp) * v.level;
       const base = v.rankValue <= fcSum
         ? speedPower * v.rankValue
         : speedPower * fcSum;
@@ -263,7 +274,7 @@
         </div>`).join("");
     }
 
-    function renderCharacterPanel(entity, path, key, title, icon, removable = false, removeAction = "") {
+    function renderCharacterPanel(entity, path, key, title, icon, removable = false, removeAction = "", editableHeaderName = false) {
       const hp = computeHP(entity);
       const ac = computeAC(entity);
       const rankGlobalVal = globalRankValue(entity);
@@ -271,12 +282,12 @@
 
       const statsHtml = STATS.map(stat => {
         const p = computeProgress(entity.stats[stat].xp);
-        const nextDisplay = p.xpNext ? Math.max(0, p.xpNext - p.xp) : "—";
+        const nextDisplay = p.xpNext ? (p.xpNext - p.xp) : null;
         return `
           <div class="card">
             <h4>${stat}</h4>
             <div>XP actuel: <strong>${formatLarge(p.xp)}</strong> <span class="small">(${formatRaw(p.xp)})</span></div>
-            <div>XP vers niveau/rank suivant: <strong>${nextDisplay === "—" ? "—" : formatLarge(nextDisplay)}</strong>${nextDisplay === "—" ? "" : ` <span class="small">(${formatRaw(nextDisplay)})</span>`}</div>
+            <div>XP vers niveau/rank suivant: <strong>${nextDisplay == null ? "—" : formatLarge(nextDisplay)}</strong>${nextDisplay == null ? "" : ` <span class="small">(${formatRaw(nextDisplay)})</span>`}</div>
             <div>Niveau: <strong>${p.level}</strong></div>
             <div>Rank: <strong>${p.rank}</strong></div>
           </div>`;
@@ -295,7 +306,13 @@
 
       return `
         <div class="card">
-          <h2>${icon} ${title} <span class="badge">Rank global: ${rankGlobal}</span></h2>
+          <h2>
+            ${icon}
+            ${editableHeaderName
+              ? `<input value="${escapeHtml(entity.nom || title)}" oninput="${path}.nom=this.value; save();" style="max-width:260px" />`
+              : title}
+            <span class="badge">Rank global: ${rankGlobal}</span>
+          </h2>
           ${removable ? `<button class="danger" onclick="${removeAction}">Supprimer ce compagnon</button>` : ""}
           <div class="card">
             <label>Nom</label>
@@ -331,7 +348,7 @@
               <select id="xpStat_${key}">${STATS.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
               <input id="xpValue_${key}" type="number" min="0" step="1" value="1" />
               <select id="xpUnit_${key}">
-                ${XP_UNITS.map(u => `<option value="${u.value}">${u.label}</option>`).join("")}
+                ${XP_UNITS.map(u => `<option value="${u.key}">${u.label}</option>`).join("")}
               </select>
               <button class="fit" onclick="addXPTo('${key}')">Ajouter</button>
             </div>
@@ -348,7 +365,7 @@
     function renderCompagnons() {
       const container = document.getElementById("compagnons");
       const companionsHtml = state.compagnons.map((companion, i) =>
-        renderCharacterPanel(companion, `state.compagnons[${i}]`, `compagnon_${i}`, `Compagnon #${i + 1}`, "🧑‍🤝‍🧑", true, `removeCompanion(${i})`)
+        renderCharacterPanel(companion, `state.compagnons[${i}]`, `compagnon_${i}`, `Compagnon #${i + 1}`, "🧑‍🤝‍🧑", true, `removeCompanion(${i})`, true)
       ).join("");
       container.innerHTML = `
         <h2>🧑‍🤝‍🧑 Compagnons</h2>
@@ -390,8 +407,9 @@
       const normalizedInput = rawInput.replace(",", ".");
       const xpFloat = Number(normalizedInput);
       const xp = Number.isFinite(xpFloat) ? Math.floor(xpFloat) : 0;
-      const unit = Number(document.getElementById(`xpUnit_${key}`)?.value) || 1;
-      const totalToAdd = xp * unit;
+      const unitKey = document.getElementById(`xpUnit_${key}`)?.value || "";
+      const selectedUnit = XP_UNITS.find(u => u.key === unitKey) || XP_UNITS[0];
+      const totalToAdd = BigInt(Math.max(0, xp)) * selectedUnit.value;
       if (!stat || xp < 0) return;
       if (xpFloat !== xp) {
         alert("Les décimales ne sont pas autorisées pour l'XP. La valeur a été arrondie à l'entier inférieur.");
@@ -400,7 +418,7 @@
         ? state.personnage
         : state.compagnons[Number(key.replace("compagnon_", ""))];
       if (!target) return;
-      target.stats[stat].xp = Math.max(1, Math.floor(target.stats[stat].xp + totalToAdd));
+      target.stats[stat].xp = (parseStoredXp(target.stats[stat].xp) + totalToAdd).toString();
       render();
     }
 
@@ -467,7 +485,7 @@
       const normalized = { ...baseCharacter, ...(raw || {}) };
       normalized.stats = { ...baseCharacter.stats, ...(raw?.stats || {}) };
       for (const stat of STATS) {
-        normalized.stats[stat] = { xp: Math.max(1, Math.floor(Number(normalized.stats[stat]?.xp) || 1)) };
+        normalized.stats[stat] = { xp: parseStoredXp(normalized.stats[stat]?.xp).toString() };
       }
       normalized.bio = Array.isArray(normalized.bio) && normalized.bio.length ? normalized.bio : [""];
       normalized.notes = Array.isArray(normalized.notes) && normalized.notes.length ? normalized.notes : [""];
