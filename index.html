@@ -359,7 +359,7 @@
               <input id="restHours_${key}" type="number" min="0" step="1" value="1" />
               <button class="fit" onclick="applyRestRecovery('${key}')">Récupérer HP (repos)</button>
             </div>
-            <div class="small">Récupération / heure: HP max de la zone ÷ (Level Constitution × Rank Constitution)</div>
+            <div class="small">Récupération / heure: (HP actuel ÷ (HP max - HP actuel)) × (Level Constitution × Rank Constitution), arrondi normal</div>
           </div>
           <div class="body-grid">${hpHtml}</div>
 
@@ -472,13 +472,19 @@
       if (!target) return;
 
       const con = computeProgress(target.stats.Constitution.xp, false);
-      const divisor = Math.max(1, con.level * con.rankValue);
+      const constitutionScale = Math.max(1, con.level * con.rankValue);
       const hp = computeHP(target);
 
-      for (const [part, values] of Object.entries(hp.parts)) {
-        const perHour = Math.floor(values.max / divisor);
-        const gain = perHour * hours;
-        target.hpCurrent[part] = Math.min(values.max, (Number(target.hpCurrent[part]) || 0) + gain);
+      for (let i = 0; i < hours; i++) {
+        for (const [part, values] of Object.entries(hp.parts)) {
+          const current = Number(target.hpCurrent[part]) || 0;
+          const missing = Math.max(0, values.max - current);
+          if (missing <= 0) continue;
+
+          const rawGain = (current / missing) * constitutionScale;
+          const gain = Math.max(1, Math.round(rawGain));
+          target.hpCurrent[part] = Math.min(values.max, current + gain);
+        }
       }
       render();
     }
