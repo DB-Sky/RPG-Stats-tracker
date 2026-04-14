@@ -99,7 +99,7 @@
     <button onclick="toggleSection('equipements')">🧰 Équipement</button>
     <button onclick="toggleSection('vehicules')">🚗 Véhicule</button>
     <button title="Réservé au futur système de dés">🎲 Lancer de dés (bientôt)</button>
-    <button onclick="addExtra('compagnons')">+ Compagnon</button>
+    <button onclick="addCompanion()">+ Compagnon</button>
     <button onclick="addExtra('equipements')">+ Équipement</button>
     <button onclick="addExtra('vehicules')">+ Véhicule</button>
     <button onclick="exportJson()">💾 Export .json</button>
@@ -140,16 +140,17 @@
     const AC_PARTS = { Tête: 0.05, Torse: 0.05, "Bras gauche": 0.10, "Bras droit": 0.10, "Main gauche": 0.04, "Main droite": 0.04, "Jambe gauche": 0.10, "Jambe droite": 0.10, "Pied gauche": 0.03, "Pied droit": 0.03 };
 
     const defaultItem = () => ({ nom: "", description: "", notes: "" });
+    const makeCharacter = () => ({
+      nom: "",
+      bio: [""],
+      notes: [""],
+      stats: Object.fromEntries(STATS.map(s => [s, { xp: 1 }])),
+      hpCurrent: {}
+    });
     const makeState = () => ({
-      personnage: {
-        nom: "",
-        bio: [""],
-        notes: [""],
-        stats: Object.fromEntries(STATS.map(s => [s, { xp: 1 }])),
-        hpCurrent: {}
-      },
+      personnage: makeCharacter(),
+      compagnons: [makeCharacter()],
       sections: {
-        compagnons: { base: defaultItem(), extras: [] },
         equipements: { base: defaultItem(), extras: [] },
         vehicules: { base: defaultItem(), extras: [] }
       }
@@ -237,24 +238,24 @@
       return { level, rank: RANKS[Math.min(rankIdx, RANKS.length - 1)] };
     }
 
-    function computeHP() {
-      const con = computeProgress(state.personnage.stats.Constitution.xp);
+    function computeHP(entity) {
+      const con = computeProgress(entity.stats.Constitution.xp);
       const c = con.xp * con.level * con.rankValue;
       const total = Math.floor(c * 100);
       const parts = {};
       Object.entries(HP_PARTS).forEach(([part, ratio]) => {
         const max = Math.floor(total * ratio);
-        if (state.personnage.hpCurrent[part] == null) state.personnage.hpCurrent[part] = max;
-        state.personnage.hpCurrent[part] = Math.max(0, Math.min(Number(state.personnage.hpCurrent[part]) || 0, max));
-        parts[part] = { max, current: state.personnage.hpCurrent[part] };
+        if (entity.hpCurrent[part] == null) entity.hpCurrent[part] = max;
+        entity.hpCurrent[part] = Math.max(0, Math.min(Number(entity.hpCurrent[part]) || 0, max));
+        parts[part] = { max, current: entity.hpCurrent[part] };
       });
       return { total, parts };
     }
 
-    function computeAC() {
-      const v = computeProgress(state.personnage.stats.Vitesse.xp);
-      const f = computeProgress(state.personnage.stats.Force.xp);
-      const c = computeProgress(state.personnage.stats.Constitution.xp);
+    function computeAC(entity) {
+      const v = computeProgress(entity.stats.Vitesse.xp);
+      const f = computeProgress(entity.stats.Force.xp);
+      const c = computeProgress(entity.stats.Constitution.xp);
       const fcSum = Math.max(1, (f.rankValue + c.rankValue));
       const speedPower = v.xp * v.level;
       const base = v.rankValue <= fcSum
@@ -265,8 +266,8 @@
       return { total, general: Math.floor(total * 0.36), parts, fcSum, vRank: v.rankValue };
     }
 
-    function globalRankValue() {
-      const sum = STATS.reduce((acc, stat) => acc + computeProgress(state.personnage.stats[stat].xp).rankValue, 0);
+    function globalRankValue(entity) {
+      const sum = STATS.reduce((acc, stat) => acc + computeProgress(entity.stats[stat].xp).rankValue, 0);
       return Math.floor(sum / STATS.length);
     }
 
@@ -278,15 +279,14 @@
         </div>`).join("");
     }
 
-    function renderPersonnage() {
-      const container = document.getElementById("personnage");
-      const hp = computeHP();
-      const ac = computeAC();
-      const rankGlobalVal = globalRankValue();
+    function renderCharacterPanel(entity, path, key, title, icon, removable = false, removeAction = "") {
+      const hp = computeHP(entity);
+      const ac = computeAC(entity);
+      const rankGlobalVal = globalRankValue(entity);
       const rankGlobal = valueToRank(rankGlobalVal);
 
       const statsHtml = STATS.map(stat => {
-        const p = computeProgress(state.personnage.stats[stat].xp);
+        const p = computeProgress(entity.stats[stat].xp);
         const nextDisplay = p.xpNext ? Math.max(0, p.xpNext - p.xp) : "—";
         return `
           <div class="card">
@@ -303,53 +303,72 @@
           <div>${part}</div>
           <div class="small">HP max: ${formatLarge(val.max)} (${val.max})</div>
           <input type="number" min="0" max="${val.max}" value="${val.current}"
-            oninput="state.personnage.hpCurrent['${part}']=Number(this.value)||0; save();" />
+            oninput="${path}.hpCurrent['${part}']=Number(this.value)||0; save();" />
           <div class="small">HP actuel: ${formatLarge(val.current)} (${val.current})</div>
         </div>`).join("");
 
       const acHtml = Object.entries(ac.parts).map(([part, value]) => `<div class="card">${part}: <strong>${formatLarge(value)}</strong> <span class="small">(${value})</span></div>`).join("");
 
-      container.innerHTML = `
-        <h2>🧙 Personnage <span class="badge">Rank global: ${rankGlobal}</span></h2>
+      return `
         <div class="card">
-          <label>Nom du personnage</label>
-          <input value="${escapeHtml(state.personnage.nom)}" oninput="state.personnage.nom=this.value; save();" />
-        </div>
+          <h2>${icon} ${title} <span class="badge">Rank global: ${rankGlobal}</span></h2>
+          ${removable ? `<button class="danger" onclick="${removeAction}">Supprimer ce compagnon</button>` : ""}
+          <div class="card">
+            <label>Nom</label>
+            <input value="${escapeHtml(entity.nom)}" oninput="${path}.nom=this.value; save();" />
+          </div>
 
-        <h3>Description / Bio</h3>
-        ${renderTextArray(state.personnage.bio, "state.personnage.bio")}
-        <button onclick="state.personnage.bio.push(''); render();">+ Ajouter un champ Bio</button>
+          <h3>Description / Bio</h3>
+          ${renderTextArray(entity.bio, `${path}.bio`)}
+          <button onclick="${path}.bio.push(''); render();">+ Ajouter un champ Bio</button>
 
-        <h3>Statistiques</h3>
-        <div class="grid">${statsHtml}</div>
+          <h3>Statistiques</h3>
+          <div class="grid">${statsHtml}</div>
 
-        <h3>HP (total ${formatLarge(hp.total)} / ${hp.total})</h3>
-        <div class="body-grid">${hpHtml}</div>
+          <h3>HP (total ${formatLarge(hp.total)} / ${hp.total})</h3>
+          <div class="body-grid">${hpHtml}</div>
 
-        <h3>AC</h3>
-        <div class="body-grid">${acHtml}</div>
-        <div class="card">
-          AC général: <strong>${formatLarge(ac.general)}</strong> <span class="small">(${ac.general})</span>
-          <div class="small">36% du total AC: ${formatLarge(ac.total)} (${ac.total})</div>
-          <div class="small">Formule: si Rankv ≤ (Rankf + Rankc) → AC = XPv × Lv × Rankv</div>
-          <div class="small">Sinon (pénalisation): AC = XPv × Lv × (Rankf + Rankc)</div>
-        </div>
+          <h3>AC</h3>
+          <div class="body-grid">${acHtml}</div>
+          <div class="card">
+            AC général: <strong>${formatLarge(ac.general)}</strong> <span class="small">(${ac.general})</span>
+            <div class="small">36% du total AC: ${formatLarge(ac.total)} (${ac.total})</div>
+            <div class="small">Formule: si Rankv ≤ (Rankf + Rankc) → AC = XPv × Lv × Rankv</div>
+            <div class="small">Sinon (pénalisation): AC = XPv × Lv × (Rankf + Rankc)</div>
+          </div>
 
-        <h3>Notes</h3>
-        ${renderTextArray(state.personnage.notes, "state.personnage.notes")}
-        <button onclick="state.personnage.notes.push(''); render();">+ Ajouter une note</button>
+          <h3>Notes</h3>
+          ${renderTextArray(entity.notes, `${path}.notes`)}
+          <button onclick="${path}.notes.push(''); render();">+ Ajouter une note</button>
 
-        <div class="card">
-          <h4>Ajouter de l'XP</h4>
-          <div class="line">
-            <select id="xpStat">${STATS.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
-            <input id="xpValue" type="number" min="0" value="1" />
-            <select id="xpUnit">
-              ${XP_UNITS.map(u => `<option value="${u.value}">${u.label}</option>`).join("")}
-            </select>
-            <button class="fit" onclick="addXP()">Ajouter</button>
+          <div class="card">
+            <h4>Ajouter de l'XP</h4>
+            <div class="line">
+              <select id="xpStat_${key}">${STATS.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
+              <input id="xpValue_${key}" type="number" min="0" value="1" />
+              <select id="xpUnit_${key}">
+                ${XP_UNITS.map(u => `<option value="${u.value}">${u.label}</option>`).join("")}
+              </select>
+              <button class="fit" onclick="addXPTo('${key}')">Ajouter</button>
+            </div>
           </div>
         </div>
+      `;
+    }
+
+    function renderPersonnage() {
+      const container = document.getElementById("personnage");
+      container.innerHTML = renderCharacterPanel(state.personnage, "state.personnage", "personnage", "Personnage", "🧙");
+    }
+
+    function renderCompagnons() {
+      const container = document.getElementById("compagnons");
+      const companionsHtml = state.compagnons.map((companion, i) =>
+        renderCharacterPanel(companion, `state.compagnons[${i}]`, `compagnon_${i}`, `Compagnon #${i + 1}`, "🧑‍🤝‍🧑", true, `removeCompanion(${i})`)
+      ).join("");
+      container.innerHTML = `
+        <h2>🧑‍🤝‍🧑 Compagnons</h2>
+        ${companionsHtml || "<div class='small'>Aucun compagnon. Clique sur + Compagnon.</div>"}
       `;
     }
 
@@ -381,13 +400,28 @@
       return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
     }
 
-    function addXP() {
-      const stat = document.getElementById("xpStat").value;
-      const xp = Number(document.getElementById("xpValue").value) || 0;
-      const unit = Number(document.getElementById("xpUnit").value) || 1;
+    function addXPTo(key) {
+      const stat = document.getElementById(`xpStat_${key}`)?.value;
+      const xp = Number(document.getElementById(`xpValue_${key}`)?.value) || 0;
+      const unit = Number(document.getElementById(`xpUnit_${key}`)?.value) || 1;
       const totalToAdd = xp * unit;
       if (!stat || xp < 0) return;
-      state.personnage.stats[stat].xp = Math.max(1, Math.floor(state.personnage.stats[stat].xp + totalToAdd));
+      const target = key === "personnage"
+        ? state.personnage
+        : state.compagnons[Number(key.replace("compagnon_", ""))];
+      if (!target) return;
+      target.stats[stat].xp = Math.max(1, Math.floor(target.stats[stat].xp + totalToAdd));
+      render();
+    }
+
+    function addCompanion() {
+      state.compagnons.push(makeCharacter());
+      render();
+    }
+
+    function removeCompanion(idx) {
+      if (!confirm("Supprimer ce compagnon ?")) return;
+      state.compagnons.splice(idx, 1);
       render();
     }
 
@@ -449,8 +483,24 @@
       merged.personnage.bio = Array.isArray(merged.personnage.bio) && merged.personnage.bio.length ? merged.personnage.bio : [""];
       merged.personnage.notes = Array.isArray(merged.personnage.notes) && merged.personnage.notes.length ? merged.personnage.notes : [""];
       merged.personnage.hpCurrent = { ...(parsed?.personnage?.hpCurrent || {}) };
+      const parsedCompanions = Array.isArray(parsed?.compagnons)
+        ? parsed.compagnons
+        : Array.isArray(parsed?.sections?.compagnons?.extras)
+          ? parsed.sections.compagnons.extras
+          : [];
+      merged.compagnons = parsedCompanions.map(c => {
+        const normalized = { ...makeCharacter(), ...c };
+        normalized.stats = { ...makeCharacter().stats, ...(c?.stats || {}) };
+        for (const stat of STATS) {
+          normalized.stats[stat] = { xp: Math.max(1, Number(normalized.stats[stat]?.xp) || 1) };
+        }
+        normalized.bio = Array.isArray(normalized.bio) && normalized.bio.length ? normalized.bio : [""];
+        normalized.notes = Array.isArray(normalized.notes) && normalized.notes.length ? normalized.notes : [""];
+        normalized.hpCurrent = { ...(c?.hpCurrent || {}) };
+        return normalized;
+      });
       merged.sections = { ...base.sections, ...(parsed?.sections || {}) };
-      for (const type of ["compagnons", "equipements", "vehicules"]) {
+      for (const type of ["equipements", "vehicules"]) {
         merged.sections[type] = {
           base: { ...defaultItem(), ...(merged.sections[type]?.base || {}) },
           extras: Array.isArray(merged.sections[type]?.extras) ? merged.sections[type].extras.map(x => ({ ...defaultItem(), ...x })) : []
@@ -472,7 +522,7 @@
 
     function render() {
       renderPersonnage();
-      renderEntitySection("compagnons", "Compagnons", "🧑‍🤝‍🧑");
+      renderCompagnons();
       renderEntitySection("equipements", "Équipement", "🧰");
       renderEntitySection("vehicules", "Véhicule", "🚗");
       save();
