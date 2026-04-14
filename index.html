@@ -197,7 +197,7 @@
       return n.toLocaleString("fr-FR", { useGrouping: false, maximumFractionDigits: 0 });
     }
 
-    function computeProgress(totalXp) {
+    function computeProgressCore(totalXp) {
       const xp = parseStoredXp(totalXp);
       let temp = xp;
       let level = 1;
@@ -222,19 +222,42 @@
         }
       }
       const rank = RANKS[rankIdx] || RANKS[RANKS.length - 1];
-      const xpNext = nextXpToAdvance(xp, level, rank);
-      return { xp, level, rank, rankValue: rankToValue(rank), xpNext };
+      return { xp, level, rank, rankValue: rankToValue(rank) };
+    }
+
+    function computeProgress(totalXp, withNext = false) {
+      const base = computeProgressCore(totalXp);
+      if (!withNext) return { ...base, xpNext: null };
+      return { ...base, xpNext: nextXpToAdvance(base.xp, base.level, base.rank) };
     }
 
     function nextXpToAdvance(currentXp, currentLevel, currentRank) {
       if (currentRank === RANKS[RANKS.length - 1]) return null;
       const xp = parseStoredXp(currentXp);
-      const needMultiplier = BigInt(currentLevel <= 9 ? MULTIPLIERS[currentLevel - 1] : 1);
-      return xp * needMultiplier;
+      const hasChanged = (candidateXp) => {
+        const p = computeProgressCore(candidateXp);
+        return p.level !== currentLevel || p.rank !== currentRank;
+      };
+
+      let low = xp + 1n;
+      let high = low;
+      while (!hasChanged(high)) {
+        high *= 2n;
+      }
+
+      while (low < high) {
+        const mid = (low + high) / 2n;
+        if (hasChanged(mid)) {
+          high = mid;
+        } else {
+          low = mid + 1n;
+        }
+      }
+      return low;
     }
 
     function computeHP(entity) {
-      const con = computeProgress(entity.stats.Constitution.xp);
+      const con = computeProgress(entity.stats.Constitution.xp, false);
       const c = Number(con.xp) * con.level * con.rankValue;
       const total = Math.floor(c * 100);
       const parts = {};
@@ -248,9 +271,9 @@
     }
 
     function computeAC(entity) {
-      const v = computeProgress(entity.stats.Vitesse.xp);
-      const f = computeProgress(entity.stats.Force.xp);
-      const c = computeProgress(entity.stats.Constitution.xp);
+      const v = computeProgress(entity.stats.Vitesse.xp, false);
+      const f = computeProgress(entity.stats.Force.xp, false);
+      const c = computeProgress(entity.stats.Constitution.xp, false);
       const fcSum = Math.max(1, (f.rankValue + c.rankValue));
       const speedPower = Number(v.xp) * v.level;
       const base = v.rankValue <= fcSum
@@ -262,7 +285,7 @@
     }
 
     function globalRankValue(entity) {
-      const sum = STATS.reduce((acc, stat) => acc + computeProgress(entity.stats[stat].xp).rankValue, 0);
+      const sum = STATS.reduce((acc, stat) => acc + computeProgress(entity.stats[stat].xp, false).rankValue, 0);
       return Math.floor(sum / STATS.length);
     }
 
@@ -274,14 +297,14 @@
         </div>`).join("");
     }
 
-    function renderCharacterPanel(entity, path, key, title, icon, removable = false, removeAction = "", editableHeaderName = false) {
+    function renderCharacterPanel(entity, path, key, title, icon, removable = false, removeAction = "", editableHeaderName = false, showNameField = true) {
       const hp = computeHP(entity);
       const ac = computeAC(entity);
       const rankGlobalVal = globalRankValue(entity);
       const rankGlobal = valueToRank(rankGlobalVal);
 
       const statsHtml = STATS.map(stat => {
-        const p = computeProgress(entity.stats[stat].xp);
+        const p = computeProgress(entity.stats[stat].xp, true);
         const nextDisplay = p.xpNext ? (p.xpNext - p.xp) : null;
         return `
           <div class="card">
@@ -314,10 +337,11 @@
             <span class="badge">Rank global: ${rankGlobal}</span>
           </h2>
           ${removable ? `<button class="danger" onclick="${removeAction}">Supprimer ce compagnon</button>` : ""}
+          ${showNameField ? `
           <div class="card">
             <label>Nom</label>
             <input value="${escapeHtml(entity.nom)}" oninput="${path}.nom=this.value; save();" />
-          </div>
+          </div>` : ""}
 
           <h3>Description / Bio</h3>
           ${renderTextArray(entity.bio, `${path}.bio`)}
@@ -365,7 +389,7 @@
     function renderCompagnons() {
       const container = document.getElementById("compagnons");
       const companionsHtml = state.compagnons.map((companion, i) =>
-        renderCharacterPanel(companion, `state.compagnons[${i}]`, `compagnon_${i}`, `Compagnon #${i + 1}`, "🧑‍🤝‍🧑", true, `removeCompanion(${i})`, true)
+        renderCharacterPanel(companion, `state.compagnons[${i}]`, `compagnon_${i}`, `Compagnon #${i + 1}`, "🧑‍🤝‍🧑", true, `removeCompanion(${i})`, true, false)
       ).join("");
       container.innerHTML = `
         <h2>🧑‍🤝‍🧑 Compagnons</h2>
@@ -418,7 +442,14 @@
         ? state.personnage
         : state.compagnons[Number(key.replace("compagnon_", ""))];
       if (!target) return;
-      target.stats[stat].xp = (parseStoredXp(target.stats[stat].xp) + totalToAdd).toString();
+      let updatedXp = parseStoredXp(target.stats[stat].xp) + totalToAdd;
+      if (selectedUnit.value >= 1000n) {
+        const remainder = updatedXp % selectedUnit.value;
+        if (remainder > 0n && remainder < 1000n) {
+          updatedXp -= remainder;
+        }
+      }
+      target.stats[stat].xp = updatedXp.toString();
       render();
     }
 
