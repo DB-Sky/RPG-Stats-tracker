@@ -354,6 +354,13 @@
           <div class="grid">${statsHtml}</div>
 
           <h3>HP (total ${formatLarge(hp.total)} / ${formatRaw(hp.total)})</h3>
+          <div class="card">
+            <div class="line">
+              <input id="restHours_${key}" type="number" min="0" step="1" value="1" />
+              <button class="fit" onclick="applyRestRecovery('${key}')">Récupérer HP (repos)</button>
+            </div>
+            <div class="small">Récupération / heure: HP max de la zone ÷ (Level Constitution × Rank Constitution)</div>
+          </div>
           <div class="body-grid">${hpHtml}</div>
 
           <h3>AC</h3>
@@ -453,6 +460,26 @@
         }
       }
       target.stats[stat].xp = updatedXp.toString();
+      render();
+    }
+
+    function applyRestRecovery(key) {
+      const hours = Math.max(0, Math.floor(Number(document.getElementById(`restHours_${key}`)?.value) || 0));
+      if (hours <= 0) return;
+      const target = key === "personnage"
+        ? state.personnage
+        : state.compagnons[Number(key.replace("compagnon_", ""))];
+      if (!target) return;
+
+      const con = computeProgress(target.stats.Constitution.xp, false);
+      const divisor = Math.max(1, con.level * con.rankValue);
+      const hp = computeHP(target);
+
+      for (const [part, values] of Object.entries(hp.parts)) {
+        const perHour = Math.floor(values.max / divisor);
+        const gain = perHour * hours;
+        target.hpCurrent[part] = Math.min(values.max, (Number(target.hpCurrent[part]) || 0) + gain);
+      }
       render();
     }
 
