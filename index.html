@@ -186,15 +186,19 @@
       let level = 1;
       let rankIdx = 0;
       while (true) {
-        const need = MULTIPLIERS[level - 1] || 2;
-        if (temp < need) break;
-        temp /= need;
-        level++;
-        if (level > 10) {
-          level = 1;
-          rankIdx++;
-          temp /= 2;
+        if (level <= 9) {
+          const need = MULTIPLIERS[level - 1];
+          if (temp < need) break;
+          temp /= need;
+          level++;
+          continue;
         }
+
+        if (rankIdx >= RANKS.length - 1) break;
+        level = 1;
+        rankIdx++;
+        temp /= 2;
+
         if (rankIdx >= RANKS.length - 1) {
           rankIdx = RANKS.length - 1;
           break;
@@ -208,7 +212,7 @@
     function nextXpToAdvance(currentXp, currentLevel, currentRank) {
       if (currentRank === RANKS[RANKS.length - 1]) return null;
       const xp = Math.max(1, Math.floor(Number(currentXp) || 1));
-      const needMultiplier = MULTIPLIERS[currentLevel - 1] || 2;
+      const needMultiplier = currentLevel <= 9 ? MULTIPLIERS[currentLevel - 1] : 1;
       return xp * needMultiplier;
     }
 
@@ -217,16 +221,18 @@
       let level = 1;
       let rankIdx = 0;
       while (true) {
-        const need = MULTIPLIERS[level - 1] || 2;
-        if (temp < need) break;
-        temp /= need;
-        level++;
-        if (level > 10) {
-          level = 1;
-          rankIdx++;
-          temp /= 2;
+        if (level <= 9) {
+          const need = MULTIPLIERS[level - 1];
+          if (temp < need) break;
+          temp /= need;
+          level++;
+          continue;
         }
+
         if (rankIdx >= RANKS.length - 1) break;
+        level = 1;
+        rankIdx++;
+        temp /= 2;
       }
       return { level, rank: RANKS[Math.min(rankIdx, RANKS.length - 1)] };
     }
