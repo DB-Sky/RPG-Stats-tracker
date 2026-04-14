@@ -181,6 +181,11 @@
       return `${sign}${compact}${units[unitIndex]}`;
     }
 
+    function formatRaw(value) {
+      const n = Number(value) || 0;
+      return n.toLocaleString("fr-FR", { useGrouping: false, maximumFractionDigits: 0 });
+    }
+
     function computeProgress(totalXp) {
       const xp = Math.max(1, Number(totalXp) || 1);
       let temp = xp;
@@ -215,27 +220,6 @@
       const xp = Math.max(1, Math.floor(Number(currentXp) || 1));
       const needMultiplier = currentLevel <= 9 ? MULTIPLIERS[currentLevel - 1] : 1;
       return xp * needMultiplier;
-    }
-
-    function computeProgressFast(totalXp) {
-      let temp = Math.max(1, Number(totalXp) || 1);
-      let level = 1;
-      let rankIdx = 0;
-      while (true) {
-        if (level <= 9) {
-          const need = MULTIPLIERS[level - 1];
-          if (temp < need) break;
-          temp /= need;
-          level++;
-          continue;
-        }
-
-        if (rankIdx >= RANKS.length - 1) break;
-        level = 1;
-        rankIdx++;
-        temp /= 2;
-      }
-      return { level, rank: RANKS[Math.min(rankIdx, RANKS.length - 1)] };
     }
 
     function computeHP(entity) {
@@ -291,8 +275,8 @@
         return `
           <div class="card">
             <h4>${stat}</h4>
-            <div>XP actuel: <strong>${formatLarge(p.xp)}</strong> <span class="small">(${p.xp})</span></div>
-            <div>XP vers niveau/rank suivant: <strong>${nextDisplay === "—" ? "—" : formatLarge(nextDisplay)}</strong>${nextDisplay === "—" ? "" : ` <span class="small">(${nextDisplay})</span>`}</div>
+            <div>XP actuel: <strong>${formatLarge(p.xp)}</strong> <span class="small">(${formatRaw(p.xp)})</span></div>
+            <div>XP vers niveau/rank suivant: <strong>${nextDisplay === "—" ? "—" : formatLarge(nextDisplay)}</strong>${nextDisplay === "—" ? "" : ` <span class="small">(${formatRaw(nextDisplay)})</span>`}</div>
             <div>Niveau: <strong>${p.level}</strong></div>
             <div>Rank: <strong>${p.rank}</strong></div>
           </div>`;
@@ -301,13 +285,13 @@
       const hpHtml = Object.entries(hp.parts).map(([part, val]) => `
         <div class="card">
           <div>${part}</div>
-          <div class="small">HP max: ${formatLarge(val.max)} (${val.max})</div>
+          <div class="small">HP max: ${formatLarge(val.max)} (${formatRaw(val.max)})</div>
           <input type="number" min="0" max="${val.max}" value="${val.current}"
             oninput="${path}.hpCurrent['${part}']=Number(this.value)||0; save();" />
-          <div class="small">HP actuel: ${formatLarge(val.current)} (${val.current})</div>
+          <div class="small">HP actuel: ${formatLarge(val.current)} (${formatRaw(val.current)})</div>
         </div>`).join("");
 
-      const acHtml = Object.entries(ac.parts).map(([part, value]) => `<div class="card">${part}: <strong>${formatLarge(value)}</strong> <span class="small">(${value})</span></div>`).join("");
+      const acHtml = Object.entries(ac.parts).map(([part, value]) => `<div class="card">${part}: <strong>${formatLarge(value)}</strong> <span class="small">(${formatRaw(value)})</span></div>`).join("");
 
       return `
         <div class="card">
@@ -325,14 +309,14 @@
           <h3>Statistiques</h3>
           <div class="grid">${statsHtml}</div>
 
-          <h3>HP (total ${formatLarge(hp.total)} / ${hp.total})</h3>
+          <h3>HP (total ${formatLarge(hp.total)} / ${formatRaw(hp.total)})</h3>
           <div class="body-grid">${hpHtml}</div>
 
           <h3>AC</h3>
           <div class="body-grid">${acHtml}</div>
           <div class="card">
-            AC général: <strong>${formatLarge(ac.general)}</strong> <span class="small">(${ac.general})</span>
-            <div class="small">36% du total AC: ${formatLarge(ac.total)} (${ac.total})</div>
+            AC général: <strong>${formatLarge(ac.general)}</strong> <span class="small">(${formatRaw(ac.general)})</span>
+            <div class="small">36% du total AC: ${formatLarge(ac.total)} (${formatRaw(ac.total)})</div>
             <div class="small">Formule: si Rankv ≤ (Rankf + Rankc) → AC = XPv × Lv × Rankv</div>
             <div class="small">Sinon (pénalisation): AC = XPv × Lv × (Rankf + Rankc)</div>
           </div>
@@ -345,7 +329,7 @@
             <h4>Ajouter de l'XP</h4>
             <div class="line">
               <select id="xpStat_${key}">${STATS.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
-              <input id="xpValue_${key}" type="number" min="0" value="1" />
+              <input id="xpValue_${key}" type="number" min="0" step="1" value="1" />
               <select id="xpUnit_${key}">
                 ${XP_UNITS.map(u => `<option value="${u.value}">${u.label}</option>`).join("")}
               </select>
@@ -402,10 +386,16 @@
 
     function addXPTo(key) {
       const stat = document.getElementById(`xpStat_${key}`)?.value;
-      const xp = Number(document.getElementById(`xpValue_${key}`)?.value) || 0;
+      const rawInput = document.getElementById(`xpValue_${key}`)?.value ?? "0";
+      const normalizedInput = rawInput.replace(",", ".");
+      const xpFloat = Number(normalizedInput);
+      const xp = Number.isFinite(xpFloat) ? Math.floor(xpFloat) : 0;
       const unit = Number(document.getElementById(`xpUnit_${key}`)?.value) || 1;
       const totalToAdd = xp * unit;
       if (!stat || xp < 0) return;
+      if (xpFloat !== xp) {
+        alert("Les décimales ne sont pas autorisées pour l'XP. La valeur a été arrondie à l'entier inférieur.");
+      }
       const target = key === "personnage"
         ? state.personnage
         : state.compagnons[Number(key.replace("compagnon_", ""))];
@@ -472,33 +462,29 @@
       reader.readAsText(file);
     }
 
+    function normalizeCharacterData(raw) {
+      const baseCharacter = makeCharacter();
+      const normalized = { ...baseCharacter, ...(raw || {}) };
+      normalized.stats = { ...baseCharacter.stats, ...(raw?.stats || {}) };
+      for (const stat of STATS) {
+        normalized.stats[stat] = { xp: Math.max(1, Math.floor(Number(normalized.stats[stat]?.xp) || 1)) };
+      }
+      normalized.bio = Array.isArray(normalized.bio) && normalized.bio.length ? normalized.bio : [""];
+      normalized.notes = Array.isArray(normalized.notes) && normalized.notes.length ? normalized.notes : [""];
+      normalized.hpCurrent = { ...(raw?.hpCurrent || {}) };
+      return normalized;
+    }
+
     function normalizeState(parsed) {
       const base = makeState();
       const merged = { ...base, ...parsed };
-      merged.personnage = { ...base.personnage, ...(parsed?.personnage || {}) };
-      merged.personnage.stats = { ...base.personnage.stats, ...(parsed?.personnage?.stats || {}) };
-      for (const stat of STATS) {
-        merged.personnage.stats[stat] = { xp: Math.max(1, Number(merged.personnage.stats[stat]?.xp) || 1) };
-      }
-      merged.personnage.bio = Array.isArray(merged.personnage.bio) && merged.personnage.bio.length ? merged.personnage.bio : [""];
-      merged.personnage.notes = Array.isArray(merged.personnage.notes) && merged.personnage.notes.length ? merged.personnage.notes : [""];
-      merged.personnage.hpCurrent = { ...(parsed?.personnage?.hpCurrent || {}) };
+      merged.personnage = normalizeCharacterData(parsed?.personnage);
       const parsedCompanions = Array.isArray(parsed?.compagnons)
         ? parsed.compagnons
         : Array.isArray(parsed?.sections?.compagnons?.extras)
           ? parsed.sections.compagnons.extras
           : [];
-      merged.compagnons = parsedCompanions.map(c => {
-        const normalized = { ...makeCharacter(), ...c };
-        normalized.stats = { ...makeCharacter().stats, ...(c?.stats || {}) };
-        for (const stat of STATS) {
-          normalized.stats[stat] = { xp: Math.max(1, Number(normalized.stats[stat]?.xp) || 1) };
-        }
-        normalized.bio = Array.isArray(normalized.bio) && normalized.bio.length ? normalized.bio : [""];
-        normalized.notes = Array.isArray(normalized.notes) && normalized.notes.length ? normalized.notes : [""];
-        normalized.hpCurrent = { ...(c?.hpCurrent || {}) };
-        return normalized;
-      });
+      merged.compagnons = parsedCompanions.map(c => normalizeCharacterData(c));
       merged.sections = { ...base.sections, ...(parsed?.sections || {}) };
       for (const type of ["equipements", "vehicules"]) {
         merged.sections[type] = {
