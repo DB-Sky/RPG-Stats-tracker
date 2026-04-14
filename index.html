@@ -206,14 +206,10 @@
     }
 
     function nextXpToAdvance(currentXp, currentLevel, currentRank) {
-      let probe = Math.floor(currentXp) + 1;
-      const limit = probe + 100000;
-      while (probe < limit) {
-        const p = computeProgressFast(probe);
-        if (p.level !== currentLevel || p.rank !== currentRank) return probe;
-        probe++;
-      }
-      return null;
+      if (currentRank === RANKS[RANKS.length - 1]) return null;
+      const xp = Math.max(1, Math.floor(Number(currentXp) || 1));
+      const needMultiplier = MULTIPLIERS[currentLevel - 1] || 2;
+      return xp * needMultiplier;
     }
 
     function computeProgressFast(totalXp) {
