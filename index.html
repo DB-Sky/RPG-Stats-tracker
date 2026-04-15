@@ -133,8 +133,9 @@
 
     const ITEM_CATEGORIES = ["Équipement", "Objets de valeurs", "Module"];
     const ITEM_FILTERS = [...ITEM_CATEGORIES, "Tout"];
+    const EQUIPMENT_REQUIREMENT_STATS = ["Force", "Constitution", "Intelligence"];
 
-    const defaultItem = (number = 1) => ({ nom: String(number), description: "", notes: "", categorie: ITEM_CATEGORIES[0], rank: "None" });
+    const defaultItem = (number = 1) => ({ nom: String(number), description: "", notes: "", categorie: ITEM_CATEGORIES[0], rank: "None", equippePar: "none", prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, "None"])) });
     function normalizeItemName(type, rawName, index) {
       const fallback = String(index + 1);
       if (rawName == null || String(rawName).trim() === "") return fallback;
@@ -381,6 +382,21 @@
             <select onchange="${onPath}.categorie=this.value; save(); render();">${ITEM_CATEGORIES.map(cat => `<option value="${cat}" ${item.categorie === cat ? "selected" : ""}>${cat}</option>`).join("")}</select>
             <label>Rank</label>
             <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${item.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+            ${item.categorie === "Équipement" ? `
+              <div class="card">
+                <h4>Prérequis d'équipement</h4>
+                ${EQUIPMENT_REQUIREMENT_STATS.map(stat => `
+                  <label>${stat} requis</label>
+                  <select onchange="${onPath}.prerequisRanks['${stat}']=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${(item.prerequisRanks?.[stat] || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+                `).join("")}
+                <label>Équipé par</label>
+                <select onchange="${onPath}.equippePar=this.value; save();">
+                  <option value="none" ${item.equippePar === "none" || item.equippePar == null ? "selected" : ""}>Non-équipé</option>
+                  <option value="personnage" ${item.equippePar === "personnage" ? "selected" : ""}>Personnage (${escapeHtml(state.personnage.nom || "Sans nom")})</option>
+                  ${state.compagnons.map((companion, idx) => `<option value="compagnon_${idx}" ${item.equippePar === `compagnon_${idx}` ? "selected" : ""}>Compagnon ${idx + 1} (${escapeHtml(companion.nom || "Sans nom")})</option>`).join("")}
+                </select>
+              </div>
+            ` : ""}
           ` : ""}
           <label>Description</label>
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
@@ -605,7 +621,9 @@
               ...x,
               nom: normalizeItemName(type, x?.nom, i),
               categorie: ITEM_CATEGORIES.includes(x?.categorie) ? x.categorie : ITEM_CATEGORIES[0],
-              rank: RANKS.includes(x?.rank) ? x.rank : "None"
+              rank: RANKS.includes(x?.rank) ? x.rank : "None",
+              equippePar: typeof x?.equippePar === "string" ? x.equippePar : (typeof x?.equipePar === "string" ? x.equipePar : "none"),
+              prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, RANKS.includes(x?.prerequisRanks?.[stat]) ? x.prerequisRanks[stat] : "None"]))
             }))
           : [defaultItem(1)];
 
