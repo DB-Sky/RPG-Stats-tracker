@@ -160,7 +160,8 @@
       bio: [""],
       notes: [""],
       stats: Object.fromEntries(STATS.map(s => [s, { level: 1, rank: "None" }])),
-      hpCurrent: {}
+      hpCurrent: {},
+      hpTemporaire: 0
     });
     const makeState = () => ({
       personnage: makeCharacter(),
@@ -291,9 +292,9 @@
           <div class="card">
             <h4>${stat}</h4>
             <label>Niveau</label>
-            <input type="number" min="1" max="10" step="1" value="${progress.level}" oninput="${path}.stats['${stat}'].level=Math.min(10, Math.max(1, Math.floor(Number(this.value)||1))); save(); render();" />
+            <select onchange="updateStatProgress('${key}', '${stat}', 'level', this.value)">${Array.from({ length: 10 }, (_, i) => i + 1).map(level => `<option value="${level}" ${progress.level === level ? "selected" : ""}>${level}</option>`).join("")}</select>
             <label>Rank</label>
-            <select onchange="${path}.stats['${stat}'].rank=this.value; ${path}.stats['${stat}'].level=1; save(); render();">${RANKS.map(rank => `<option value="${rank}" ${progress.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+            <select onchange="updateStatProgress('${key}', '${stat}', 'rank', this.value)">${RANKS.map(rank => `<option value="${rank}" ${progress.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
           </div>`;
       }).join("");
 
@@ -330,6 +331,10 @@
           <div class="grid">${statsHtml}</div>
 
           <h3>HP (total ${formatLarge(hp.total)} / ${formatRaw(hp.total)})</h3>
+          <div class="card">
+            <label>HP temporaire (n'affecte pas les zones et ne se régénère pas)</label>
+            <input type="number" step="1" value="${Number(entity.hpTemporaire) || 0}" oninput="${path}.hpTemporaire=Number(this.value)||0; save();" />
+          </div>
           <div class="card">
             <div class="line">
               <input id="restHours_${key}" type="number" min="0" step="1" value="1" />
@@ -442,6 +447,40 @@
       return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
     }
 
+    function getEntityByKey(key) {
+      if (key === "personnage") return state.personnage;
+      if (key.startsWith("compagnon_")) return state.compagnons[Number(key.replace("compagnon_", ""))];
+      return null;
+    }
+
+    function updateStatProgress(key, stat, field, rawValue) {
+      const target = getEntityByKey(key);
+      if (!target || !target.stats?.[stat]) return;
+
+      const oldHp = computeHP(target);
+      const oldParts = Object.fromEntries(Object.entries(oldHp.parts).map(([part, values]) => [part, { ...values }]));
+      const wasFull = Object.values(oldParts).every(values => values.current >= values.max);
+
+      if (field === "level") {
+        target.stats[stat].level = Math.min(10, Math.max(1, Math.floor(Number(rawValue) || 1)));
+      } else if (field === "rank") {
+        target.stats[stat].rank = RANKS.includes(rawValue) ? rawValue : "None";
+        target.stats[stat].level = 1;
+      }
+
+      const newHp = computeHP(target);
+      for (const [part, values] of Object.entries(newHp.parts)) {
+        if (wasFull) {
+          target.hpCurrent[part] = values.max;
+          continue;
+        }
+        const oldValues = oldParts[part] || { current: values.max, max: values.max };
+        const ratio = oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
+        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
+      }
+      render();
+    }
+
     function applyRestRecovery(key) {
       const hours = Math.max(0, Math.floor(Number(document.getElementById(`restHours_${key}`)?.value) || 0));
       if (hours <= 0) return;
@@ -536,6 +575,7 @@
       normalized.bio = Array.isArray(normalized.bio) && normalized.bio.length ? normalized.bio : [""];
       normalized.notes = Array.isArray(normalized.notes) && normalized.notes.length ? normalized.notes : [""];
       normalized.hpCurrent = { ...(raw?.hpCurrent || {}) };
+      normalized.hpTemporaire = Number(raw?.hpTemporaire) || 0;
       return normalized;
     }
 
