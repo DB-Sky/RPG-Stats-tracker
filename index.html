@@ -402,7 +402,7 @@
             return categoryOk && searchOk;
           })
         : items;
-      const itemsHtml = filteredItems.map((item, i) => {
+      const itemsHtml = filteredItems.map((item) => {
         const realIdx = items.indexOf(item);
         return renderItem(item, `state.sections.${type}.items[${realIdx}]`, realIdx);
       }).join("");
