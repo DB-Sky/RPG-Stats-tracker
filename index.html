@@ -237,7 +237,7 @@
       const fallback = { level: 1, rank: "None" };
       if (!statData || typeof statData !== "object") return fallback;
       if (statData.level != null || statData.rank != null) {
-        const level = Math.max(1, Math.floor(Number(statData.level) || 1));
+        const level = Math.min(10, Math.max(1, Math.floor(Number(statData.level) || 1)));
         const rank = RANKS.includes(statData.rank) ? statData.rank : "None";
         return { level, rank };
       }
@@ -291,9 +291,9 @@
           <div class="card">
             <h4>${stat}</h4>
             <label>Niveau</label>
-            <input type="number" min="1" step="1" value="${progress.level}" oninput="${path}.stats['${stat}'].level=Math.max(1, Math.floor(Number(this.value)||1)); save(); render();" />
+            <input type="number" min="1" max="10" step="1" value="${progress.level}" oninput="${path}.stats['${stat}'].level=Math.min(10, Math.max(1, Math.floor(Number(this.value)||1))); save(); render();" />
             <label>Rank</label>
-            <select onchange="${path}.stats['${stat}'].rank=this.value; save(); render();">${RANKS.map(rank => `<option value="${rank}" ${progress.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+            <select onchange="${path}.stats['${stat}'].rank=this.value; ${path}.stats['${stat}'].level=1; save(); render();">${RANKS.map(rank => `<option value="${rank}" ${progress.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
           </div>`;
       }).join("");
 
@@ -335,7 +335,7 @@
               <input id="restHours_${key}" type="number" min="0" step="1" value="1" />
               <button class="fit" onclick="applyRestRecovery('${key}')">Récupérer HP (repos)</button>
             </div>
-            <div class="small">Régénération par zone: gain/h = ((HPactuel²)/HPmax) × (HPactuel/HPmax), arrondi inférieur, minimum 1</div>
+            <div class="small">Régénération par zone et par heure: gain/h = ((HPactuel²)/HPmax) × (HPactuel/HPmax), arrondi inférieur, minimum 1</div>
           </div>
           <div class="body-grid">${hpHtml}</div>
 
