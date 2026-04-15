@@ -261,9 +261,9 @@
     }
 
     function regenPerHour(partMax, partCurrent) {
-      const ratio = Math.max(0, Math.min(1, partCurrent / Math.max(1, partMax)));
-      const expoFactor = Math.pow(ratio, 2.4);
-      const gain = Math.round(partMax * 0.06 * expoFactor);
+      const hpTotal = Math.max(1, Number(partMax) || 1);
+      const hpActuel = Math.max(0, Number(partCurrent) || 0);
+      const gain = Math.floor(((hpActuel * hpActuel) / hpTotal) * (hpActuel / hpTotal));
       return Math.max(1, gain);
     }
 
@@ -335,7 +335,7 @@
               <input id="restHours_${key}" type="number" min="0" step="1" value="1" />
               <button class="fit" onclick="applyRestRecovery('${key}')">Récupérer HP (repos)</button>
             </div>
-            <div class="small">Régénération proportionnelle/exponentielle par zone: gain/h = 6% × HPmax(zone) × (HPactuel/HPmax)^2.4</div>
+            <div class="small">Régénération par zone: gain/h = ((HPactuel²)/HPmax) × (HPactuel/HPmax), arrondi inférieur, minimum 1</div>
           </div>
           <div class="body-grid">${hpHtml}</div>
 
