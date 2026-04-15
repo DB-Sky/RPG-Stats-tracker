@@ -160,8 +160,8 @@
       personnage: makeCharacter(),
       compagnons: [makeCharacter()],
       sections: {
-        equipements: { base: defaultItem(), extras: [] },
-        vehicules: { base: defaultItem(), extras: [] }
+        equipements: { items: [defaultItem()] },
+        vehicules: { items: [defaultItem()] }
       }
     });
 
@@ -410,7 +410,7 @@
     function renderEntitySection(type, title, icon) {
       const wrap = document.getElementById(type);
       const section = state.sections[type];
-      const renderItem = (item, label, removable, onPath, idx = -1) => `
+      const renderItem = (item, label, onPath, idx) => `
         <div class="card">
           <h4>${label}</h4>
           <label>Nom</label>
@@ -419,15 +419,14 @@
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
           <label>Notes</label>
           <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
-          ${removable ? `<button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer (copie)</button>` : "<div class='small'>Template de base (non supprimable)</div>"}
+          <button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button>
         </div>`;
 
-      const basePath = `state.sections.${type}.base`;
-      const extrasHtml = section.extras.map((item, i) => renderItem(item, `${title} #${i + 1} (copie)`, true, `state.sections.${type}.extras[${i}]`, i)).join("");
+      const items = Array.isArray(section.items) ? section.items : [];
+      const itemsHtml = items.map((item, i) => renderItem(item, `${title} #${i + 1}`, `state.sections.${type}.items[${i}]`, i)).join("");
       wrap.innerHTML = `
         <h2>${icon} ${title}</h2>
-        ${renderItem(section.base, `${title} de base`, false, basePath)}
-        ${extrasHtml || "<div class='small'>Aucune copie ajoutée.</div>"}
+        ${itemsHtml || "<div class='small'>Aucun élément.</div>"}
       `;
     }
 
@@ -501,13 +500,13 @@
     }
 
     function addExtra(type) {
-      state.sections[type].extras.push(JSON.parse(JSON.stringify(state.sections[type].base)));
+      state.sections[type].items.push(defaultItem());
       render();
     }
 
     function removeExtra(type, idx) {
-      if (!confirm("Supprimer cette section copiée ?")) return;
-      state.sections[type].extras.splice(idx, 1);
+      if (!confirm("Supprimer cet élément ?")) return;
+      state.sections[type].items.splice(idx, 1);
       render();
     }
 
@@ -572,9 +571,14 @@
       merged.compagnons = parsedCompanions.map(c => normalizeCharacterData(c));
       merged.sections = { ...base.sections, ...(parsed?.sections || {}) };
       for (const type of ["equipements", "vehicules"]) {
+        const parsedItems = Array.isArray(parsed?.sections?.[type]?.items)
+          ? parsed.sections[type].items
+          : [
+              ...(parsed?.sections?.[type]?.base ? [parsed.sections[type].base] : []),
+              ...(Array.isArray(parsed?.sections?.[type]?.extras) ? parsed.sections[type].extras : [])
+            ];
         merged.sections[type] = {
-          base: { ...defaultItem(), ...(merged.sections[type]?.base || {}) },
-          extras: Array.isArray(merged.sections[type]?.extras) ? merged.sections[type].extras.map(x => ({ ...defaultItem(), ...x })) : []
+          items: parsedItems.length ? parsedItems.map(x => ({ ...defaultItem(), ...x })) : [defaultItem()]
         };
       }
       return merged;
