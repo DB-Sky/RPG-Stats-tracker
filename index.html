@@ -123,7 +123,7 @@
 
   <script>
     const STORAGE_KEY = "rpg_tracker_v2";
-    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence"];
+    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse"];
     const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
     const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
     const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
@@ -133,7 +133,7 @@
 
     const ITEM_CATEGORIES = ["Équipement", "Objets de valeurs", "Module"];
     const ITEM_FILTERS = [...ITEM_CATEGORIES, "Tout"];
-    const EQUIPMENT_REQUIREMENT_STATS = ["Force", "Constitution", "Intelligence"];
+    const EQUIPMENT_REQUIREMENT_STATS = ["Force", "Constitution", "Intelligence", "Sagesse"];
 
     const defaultItem = (number = 1) => ({ nom: String(number), description: "", notes: "", categorie: ITEM_CATEGORIES[0], rank: "None", equippePar: "none", prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, "None"])) });
     function normalizeItemName(type, rawName, index) {
