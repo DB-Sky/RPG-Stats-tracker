@@ -116,7 +116,7 @@
 
   <main class="workspace">
     <section id="personnage" class="section"></section>
-    <section id="compagnons" class="section"></section>
+    <section id="compagnons" class="section hidden"></section>
     <section id="equipements" class="section"></section>
     <section id="vehicules" class="section"></section>
   </main>
@@ -166,7 +166,7 @@
     });
     const makeState = () => ({
       personnage: makeCharacter(),
-      compagnons: [makeCharacter()],
+      compagnons: [],
       sections: {
         equipements: {
           items: [defaultItem(1)],
@@ -520,6 +520,7 @@
 
     function addCompanion() {
       state.compagnons.push(makeCharacter());
+      document.getElementById("compagnons")?.classList.remove("hidden");
       render();
     }
 
@@ -554,6 +555,7 @@
       if (!confirm("Confirmer la réinitialisation complète ? Toutes les données seront supprimées.")) return;
       state = makeState();
       localStorage.removeItem(STORAGE_KEY);
+      document.getElementById("compagnons")?.classList.add("hidden");
       render();
     }
 
