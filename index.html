@@ -89,17 +89,23 @@
       gap: 6px;
     }
     .small { color: var(--muted); font-size: .86rem; }
+    label { display:block; margin: 6px 0 4px; }
+    .values-stack {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
   <header>
     <button onclick="toggleSection('personnage')">🧙 Personnage</button>
     <button onclick="toggleSection('compagnons')">🧑‍🤝‍🧑 Compagnons</button>
-    <button onclick="toggleSection('equipements')">🧰 Équipement</button>
+    <button onclick="toggleSection('equipements')">🧰 Objets</button>
     <button onclick="toggleSection('vehicules')">🚗 Véhicule</button>
     <button title="Réservé au futur système de dés">🎲 Lancer de dés (bientôt)</button>
     <button onclick="addCompanion()">+ Compagnon</button>
-    <button onclick="addExtra('equipements')">+ Équipement</button>
+    <button onclick="addExtra('equipements')">+ Objet</button>
     <button onclick="addExtra('vehicules')">+ Véhicule</button>
     <button onclick="exportJson()">💾 Export .json</button>
     <button class="danger" onclick="resetAll()">🗑️ Reset principal</button>
@@ -133,12 +139,15 @@
     const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
     const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
     const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
-    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined / Non déterminé"];
+    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined"];
 
     const HP_PARTS = { Tête: 0.10, Torse: 0.20, "Bras gauche": 0.12, "Bras droit": 0.12, "Main gauche": 0.05, "Main droite": 0.05, "Jambe gauche": 0.13, "Jambe droite": 0.13, "Pied gauche": 0.05, "Pied droit": 0.05 };
     const AC_PARTS = { Tête: 0.05, Torse: 0.05, "Bras gauche": 0.10, "Bras droit": 0.10, "Main gauche": 0.04, "Main droite": 0.04, "Jambe gauche": 0.10, "Jambe droite": 0.10, "Pied gauche": 0.03, "Pied droit": 0.03 };
 
-    const defaultItem = () => ({ nom: "", description: "", notes: "" });
+    const ITEM_CATEGORIES = ["Équipement", "Objets de valeurs", "Module"];
+    const ITEM_FILTERS = [...ITEM_CATEGORIES, "Tout"];
+
+    const defaultItem = (number = 1) => ({ nom: String(number), description: "", notes: "", categorie: ITEM_CATEGORIES[0], rank: "None" });
     const parseStoredXp = (value) => {
       if (typeof value === "bigint") return value > 0n ? value : 1n;
       if (typeof value === "string" && /^\d+$/.test(value.trim())) {
@@ -160,8 +169,18 @@
       personnage: makeCharacter(),
       compagnons: [makeCharacter()],
       sections: {
-        equipements: { items: [defaultItem()] },
-        vehicules: { items: [defaultItem()] }
+        equipements: {
+          items: [defaultItem(1)],
+          monnaies: {
+            pointEchange: 0,
+            pieceEnergie: 0,
+            monnaieLocale: 0
+          },
+          filtreCategorie: "Tout",
+          searchInput: "",
+          searchTerm: ""
+        },
+        vehicules: { items: [defaultItem(1)] }
       }
     });
 
@@ -410,22 +429,73 @@
     function renderEntitySection(type, title, icon) {
       const wrap = document.getElementById(type);
       const section = state.sections[type];
-      const renderItem = (item, label, onPath, idx) => `
+      const renderItem = (item, onPath, idx) => `
         <div class="card">
-          <h4>${label}</h4>
           <label>Nom</label>
           <input value="${escapeHtml(item.nom)}" oninput="${onPath}.nom=this.value; save();" />
-          <label>Description</label>
+          ${type === "equipements" ? `
+            <label>Catégorie</label>
+            <select onchange="${onPath}.categorie=this.value; save(); render();">${ITEM_CATEGORIES.map(cat => `<option value="${cat}" ${item.categorie === cat ? "selected" : ""}>${cat}</option>`).join("")}</select>
+            <label>Description</label>
+          ` : '<label>Description</label>'}
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
           <label>Notes</label>
           <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
+          ${type === "equipements" ? `
+            <label>Rank</label>
+            <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${item.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+          ` : ""}
           <button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button>
         </div>`;
 
       const items = Array.isArray(section.items) ? section.items : [];
-      const itemsHtml = items.map((item, i) => renderItem(item, `${title} #${i + 1}`, `state.sections.${type}.items[${i}]`, i)).join("");
+      const filteredItems = type === "equipements"
+        ? items.filter(item => {
+            const categoryOk = section.filtreCategorie === "Tout" || item.categorie === section.filtreCategorie;
+            const term = (section.searchTerm || "").trim().toLowerCase();
+            const searchOk = !term || [item.nom, item.description, item.notes, item.categorie, item.rank].some(v => String(v || "").toLowerCase().includes(term));
+            return categoryOk && searchOk;
+          })
+        : items;
+      const itemsHtml = filteredItems.map((item, i) => {
+        const realIdx = items.indexOf(item);
+        return renderItem(item, `state.sections.${type}.items[${realIdx}]`, realIdx);
+      }).join("");
+
+      const equipementsTools = type === "equipements" ? `
+        <div class="card">
+          <h3>💱 Valeurs</h3>
+          <div class="values-stack">
+            <div>
+              <label>Point d'échange</label>
+              <input type="number" step="1" value="${section.monnaies.pointEchange}" oninput="state.sections.equipements.monnaies.pointEchange=Number(this.value)||0; save();" />
+            </div>
+            <div>
+              <label>Pièce d'énergie</label>
+              <input type="number" step="1" value="${section.monnaies.pieceEnergie}" oninput="state.sections.equipements.monnaies.pieceEnergie=Number(this.value)||0; save();" />
+            </div>
+            <div>
+              <label>Monnaie locale</label>
+              <input type="number" step="1" value="${section.monnaies.monnaieLocale}" oninput="state.sections.equipements.monnaies.monnaieLocale=Number(this.value)||0; save();" />
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Filtres</h3>
+          <div class="line">
+            <label class="fit">Catégorie</label>
+            <select onchange="state.sections.equipements.filtreCategorie=this.value; render();">${ITEM_FILTERS.map(cat => `<option value="${cat}" ${section.filtreCategorie === cat ? "selected" : ""}>${cat}</option>`).join("")}</select>
+          </div>
+          <div class="line">
+            <input value="${escapeHtml(section.searchInput || "")}" placeholder="Recherche..." oninput="state.sections.equipements.searchInput=this.value; save();" />
+            <button class="fit" onclick="applyEquipementSearch()">Rechercher</button>
+          </div>
+        </div>
+      ` : "";
+
       wrap.innerHTML = `
         <h2>${icon} ${title}</h2>
+        ${equipementsTools}
         ${itemsHtml || "<div class='small'>Aucun élément.</div>"}
       `;
     }
@@ -500,7 +570,13 @@
     }
 
     function addExtra(type) {
-      state.sections[type].items.push(defaultItem());
+      const nextNumber = state.sections[type].items.length + 1;
+      state.sections[type].items.push(defaultItem(nextNumber));
+      render();
+    }
+
+    function applyEquipementSearch() {
+      state.sections.equipements.searchTerm = state.sections.equipements.searchInput || "";
       render();
     }
 
@@ -577,8 +653,35 @@
               ...(parsed?.sections?.[type]?.base ? [parsed.sections[type].base] : []),
               ...(Array.isArray(parsed?.sections?.[type]?.extras) ? parsed.sections[type].extras : [])
             ];
+        const normalizedItems = parsedItems.length
+          ? parsedItems.map((x, i) => ({
+              ...defaultItem(i + 1),
+              ...x,
+              nom: x?.nom ? String(x.nom) : String(i + 1),
+              categorie: ITEM_CATEGORIES.includes(x?.categorie) ? x.categorie : ITEM_CATEGORIES[0],
+              rank: RANKS.includes(x?.rank) ? x.rank : "None"
+            }))
+          : [defaultItem(1)];
+
+        if (type === "equipements") {
+          merged.sections[type] = {
+            items: normalizedItems,
+            monnaies: {
+              pointEchange: Number(parsed?.sections?.equipements?.monnaies?.pointEchange) || 0,
+              pieceEnergie: Number(parsed?.sections?.equipements?.monnaies?.pieceEnergie) || 0,
+              monnaieLocale: Number(parsed?.sections?.equipements?.monnaies?.monnaieLocale) || 0
+            },
+            filtreCategorie: ITEM_FILTERS.includes(parsed?.sections?.equipements?.filtreCategorie)
+              ? parsed.sections.equipements.filtreCategorie
+              : "Tout",
+            searchInput: String(parsed?.sections?.equipements?.searchInput || ""),
+            searchTerm: String(parsed?.sections?.equipements?.searchTerm || "")
+          };
+          continue;
+        }
+
         merged.sections[type] = {
-          items: parsedItems.length ? parsedItems.map(x => ({ ...defaultItem(), ...x })) : [defaultItem()]
+          items: normalizedItems
         };
       }
       return merged;
@@ -599,7 +702,7 @@
       nextXpCache.clear();
       renderPersonnage();
       renderCompagnons();
-      renderEntitySection("equipements", "Équipement", "🧰");
+      renderEntitySection("equipements", "Objets", "🧰");
       renderEntitySection("vehicules", "Véhicule", "🚗");
       save();
     }
