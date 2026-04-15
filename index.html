@@ -148,6 +148,16 @@
     const ITEM_FILTERS = [...ITEM_CATEGORIES, "Tout"];
 
     const defaultItem = (number = 1) => ({ nom: String(number), description: "", notes: "", categorie: ITEM_CATEGORIES[0], rank: "None" });
+    function normalizeItemName(type, rawName, index) {
+      const fallback = String(index + 1);
+      if (rawName == null || String(rawName).trim() === "") return fallback;
+      const name = String(rawName).trim();
+      const matchEquip = name.match(/^Objets?\s*#\s*(\d+)$/i);
+      const matchVehicle = name.match(/^V[ée]hicule\s*#\s*(\d+)$/i);
+      if (type === "equipements" && matchEquip) return matchEquip[1];
+      if (type === "vehicules" && matchVehicle) return matchVehicle[1];
+      return name;
+    }
     const parseStoredXp = (value) => {
       if (typeof value === "bigint") return value > 0n ? value : 1n;
       if (typeof value === "string" && /^\d+$/.test(value.trim())) {
@@ -436,8 +446,10 @@
           ${type === "equipements" ? `
             <label>Catégorie</label>
             <select onchange="${onPath}.categorie=this.value; save(); render();">${ITEM_CATEGORIES.map(cat => `<option value="${cat}" ${item.categorie === cat ? "selected" : ""}>${cat}</option>`).join("")}</select>
-            <label>Description</label>
-          ` : '<label>Description</label>'}
+            <label>Rank</label>
+            <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${item.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+          ` : ""}
+          <label>Description</label>
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
           <label>Notes</label>
           <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
@@ -657,7 +669,7 @@
           ? parsedItems.map((x, i) => ({
               ...defaultItem(i + 1),
               ...x,
-              nom: x?.nom ? String(x.nom) : String(i + 1),
+              nom: normalizeItemName(type, x?.nom, i),
               categorie: ITEM_CATEGORIES.includes(x?.categorie) ? x.categorie : ITEM_CATEGORIES[0],
               rank: RANKS.includes(x?.rank) ? x.rank : "None"
             }))
