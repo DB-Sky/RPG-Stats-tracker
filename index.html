@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RPG Tracker amélioré</title>
+  <style>
+    :root {
+      --bg: #13151d;
+      --panel: #1d2130;
+      --panel-2: #252a3d;
+      --text: #f2f5ff;
+      --muted: #aeb5ce;
+      --accent: #71a3ff;
+      --danger: #ff6b7a;
+      --border: #3a4364;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px;
+      background: #0d1018;
+      border-bottom: 1px solid var(--border);
+    }
+    button, input, select, textarea {
+      font: inherit;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 10px;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    button.danger:hover { border-color: var(--danger); color: var(--danger); }
+    .badge {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-left: 6px;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 12px;
+      padding: 12px;
+      align-items: start;
+    }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      min-width: 300px;
+      max-width: 100%;
+      overflow: auto;
+    }
+    .hidden { display: none; }
+    h2, h3, h4 { margin: 8px 0; }
+    h2 { display: flex; align-items: center; gap: 8px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      background: #1a1f2e;
+    }
+    .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .line > * { flex: 1; }
+    .line .fit { flex: 0 0 auto; }
+    textarea { min-height: 70px; width: 100%; }
+    .body-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 6px;
+    }
+    .small { color: var(--muted); font-size: .86rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <button onclick="toggleSection('personnage')">🧙 Personnage</button>
+    <button onclick="toggleSection('compagnons')">🧑‍🤝‍🧑 Compagnons</button>
+    <button onclick="toggleSection('equipements')">🧰 Équipement</button>
+    <button onclick="toggleSection('vehicules')">🚗 Véhicule</button>
+    <button title="Réservé au futur système de dés">🎲 Lancer de dés (bientôt)</button>
+    <button onclick="addCompanion()">+ Compagnon</button>
+    <button onclick="addExtra('equipements')">+ Équipement</button>
+    <button onclick="addExtra('vehicules')">+ Véhicule</button>
+    <button onclick="exportJson()">💾 Export .json</button>
+    <button class="danger" onclick="resetAll()">🗑️ Reset principal</button>
+    <label class="fit">📂 Import .json
+      <input type="file" accept="application/json" onchange="importJson(event)" style="display:none" />
+    </label>
+  </header>
+
+  <main class="workspace">
+    <section id="personnage" class="section"></section>
+    <section id="compagnons" class="section"></section>
+    <section id="equipements" class="section"></section>
+    <section id="vehicules" class="section"></section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "rpg_tracker_v2";
+    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse", "Charisme"];
+    const MULTIPLIERS = [2, 2, 3, 2, 3, 2, 2, 2, 3];
+    const XP_UNITS = [
+      { key: "", label: "Rien (10^0)", value: 1n },
+      { key: "K", label: "Kilo (10^3)", value: 1000n },
+      { key: "M", label: "Méga (10^6)", value: 1000000n },
+      { key: "G", label: "Giga (10^9)", value: 1000000000n },
+      { key: "T", label: "Téra (10^12)", value: 1000000000000n },
+      { key: "P", label: "Péta (10^15)", value: 1000000000000000n },
+      { key: "E", label: "Exa (10^18)", value: 1000000000000000000n },
+      { key: "Z", label: "Zetta (10^21)", value: 1000000000000000000000n },
+      { key: "Y", label: "Yotta (10^24)", value: 1000000000000000000000000n }
+    ];
+    const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
+    const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
+    const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
+    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined / Non déterminé"];
+
+    const HP_PARTS = { Tête: 0.10, Torse: 0.20, "Bras gauche": 0.12, "Bras droit": 0.12, "Main gauche": 0.05, "Main droite": 0.05, "Jambe gauche": 0.13, "Jambe droite": 0.13, "Pied gauche": 0.05, "Pied droit": 0.05 };
+    const AC_PARTS = { Tête: 0.05, Torse: 0.05, "Bras gauche": 0.10, "Bras droit": 0.10, "Main gauche": 0.04, "Main droite": 0.04, "Jambe gauche": 0.10, "Jambe droite": 0.10, "Pied gauche": 0.03, "Pied droit": 0.03 };
+
+    const defaultItem = () => ({ nom: "", description: "", notes: "" });
+    const parseStoredXp = (value) => {
+      if (typeof value === "bigint") return value > 0n ? value : 1n;
+      if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+        const parsed = BigInt(value.trim());
+        return parsed > 0n ? parsed : 1n;
+      }
+      const fallback = Number(value);
+      if (!Number.isFinite(fallback)) return 1n;
+      return BigInt(Math.max(1, Math.floor(fallback)));
+    };
+    const makeCharacter = () => ({
+      nom: "",
+      bio: [""],
+      notes: [""],
+      stats: Object.fromEntries(STATS.map(s => [s, { xp: "1" }])),
+      hpCurrent: {}
+    });
+    const makeState = () => ({
+      personnage: makeCharacter(),
+      compagnons: [makeCharacter()],
+      sections: {
+        equipements: { items: [defaultItem()] },
+        vehicules: { items: [defaultItem()] }
+      }
+    });
+
+    let state = makeState();
+    const nextXpCache = new Map();
+
+    const rankToValue = (rankLabel) => {
+      const idx = RANKS.indexOf(rankLabel);
+      return idx >= 0 ? idx + 1 : RANKS.length;
+    };
+    const valueToRank = (n) => RANKS[Math.max(0, Math.min(RANKS.length - 1, n - 1))];
+
+    function formatLarge(value) {
+      const n = typeof value === "bigint" ? Number(value) : Number(value) || 0;
+      const sign = n < 0 ? "-" : "";
+      const abs = Math.abs(n);
+      if (abs < 1000) return `${Math.floor(n)}`;
+      const units = ["K", "M", "G", "T", "P", "E", "Z", "Y"];
+      let scaled = abs;
+      let unitIndex = -1;
+      while (scaled >= 1000 && unitIndex < units.length - 1) {
+        scaled /= 1000;
+        unitIndex++;
+      }
+      const shown = scaled >= 100 ? scaled.toFixed(0) : scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2);
+      const compact = shown.replace(/\.?0+$/, "");
+      return `${sign}${compact}${units[unitIndex]}`;
+    }
+
+    function formatRaw(value) {
+      if (typeof value === "bigint") return value.toString();
+      const n = Number(value) || 0;
+      return n.toLocaleString("fr-FR", { useGrouping: false, maximumFractionDigits: 0 });
+    }
+
+    function computeProgressCore(totalXp) {
+      const xp = parseStoredXp(totalXp);
+      let temp = xp;
+      let level = 1;
+      let rankIdx = 0;
+      while (true) {
+        if (level <= 9) {
+          const need = BigInt(MULTIPLIERS[level - 1]);
+          if (temp < need) break;
+          temp /= need;
+          level++;
+          continue;
+        }
+
+        if (rankIdx >= RANKS.length - 1) break;
+        level = 1;
+        rankIdx++;
+        temp /= 2n;
+
+        if (rankIdx >= RANKS.length - 1) {
+          rankIdx = RANKS.length - 1;
+          break;
+        }
+      }
+      const rank = RANKS[rankIdx] || RANKS[RANKS.length - 1];
+      return { xp, level, rank, rankValue: rankToValue(rank) };
+    }
+
+    function computeProgress(totalXp, withNext = false) {
+      const base = computeProgressCore(totalXp);
+      if (!withNext) return { ...base, xpNext: null };
+      return { ...base, xpNext: nextXpToAdvance(base.xp, base.level, base.rank) };
+    }
+
+    function nextXpToAdvance(currentXp, currentLevel, currentRank) {
+      if (currentRank === RANKS[RANKS.length - 1]) return null;
+      const xp = parseStoredXp(currentXp);
+      const cacheKey = `${xp.toString()}|${currentLevel}|${currentRank}`;
+      if (nextXpCache.has(cacheKey)) return nextXpCache.get(cacheKey);
+      const hasChanged = (candidateXp) => {
+        const p = computeProgressCore(candidateXp);
+        return p.level !== currentLevel || p.rank !== currentRank;
+      };
+
+      let low = xp + 1n;
+      let high = low;
+      while (!hasChanged(high)) {
+        high *= 2n;
+      }
+
+      while (low < high) {
+        const mid = (low + high) / 2n;
+        if (hasChanged(mid)) {
+          high = mid;
+        } else {
+          low = mid + 1n;
+        }
+      }
+      nextXpCache.set(cacheKey, low);
+      return low;
+    }
+
+    function computeHP(entity) {
+      const con = computeProgress(entity.stats.Constitution.xp, false);
+      const c = Number(con.xp) * con.level * con.rankValue;
+      const total = Math.floor(c * 100);
+      const parts = {};
+      Object.entries(HP_PARTS).forEach(([part, ratio]) => {
+        const max = Math.floor(total * ratio);
+        if (entity.hpCurrent[part] == null) entity.hpCurrent[part] = max;
+        entity.hpCurrent[part] = Math.max(0, Math.min(Number(entity.hpCurrent[part]) || 0, max));
+        parts[part] = { max, current: entity.hpCurrent[part] };
+      });
+      return { total, parts };
+    }
+
+    function computeAC(entity) {
+      const v = computeProgress(entity.stats.Vitesse.xp, false);
+      const f = computeProgress(entity.stats.Force.xp, false);
+      const c = computeProgress(entity.stats.Constitution.xp, false);
+      const fcSum = Math.max(1, (f.rankValue + c.rankValue));
+      const speedPower = Number(v.xp) * v.level;
+      const base = v.rankValue <= fcSum
+        ? speedPower * v.rankValue
+        : speedPower * fcSum;
+      const total = Math.floor(base * 100);
+      const parts = Object.fromEntries(Object.entries(AC_PARTS).map(([p, ratio]) => [p, Math.floor(total * ratio)]));
+      return { total, general: Math.floor(total * 0.36), parts, fcSum, vRank: v.rankValue };
+    }
+
+    function globalRankValue(entity) {
+      const sum = STATS.reduce((acc, stat) => acc + computeProgress(entity.stats[stat].xp, false).rankValue, 0);
+      return Math.floor(sum / STATS.length);
+    }
+
+    function renderTextArray(items, onChangePrefix) {
+      return items.map((txt, i) => `
+        <div class="card">
+          <textarea oninput="${onChangePrefix}[${i}] = this.value; save();">${escapeHtml(txt)}</textarea>
+          <div class="line"><button class="danger" onclick="${onChangePrefix}.splice(${i},1); if(!${onChangePrefix}.length) ${onChangePrefix}.push(''); render();">Supprimer ce champ</button></div>
+        </div>`).join("");
+    }
+
+    function renderCharacterPanel(entity, path, key, title, icon, removable = false, removeAction = "", editableHeaderName = false, showNameField = true) {
+      const hp = computeHP(entity);
+      const ac = computeAC(entity);
+      const rankGlobalVal = globalRankValue(entity);
+      const rankGlobal = valueToRank(rankGlobalVal);
+
+      const statsHtml = STATS.map(stat => {
+        const p = computeProgress(entity.stats[stat].xp, true);
+        const nextDisplay = p.xpNext ? (p.xpNext - p.xp) : null;
+        return `
+          <div class="card">
+            <h4>${stat}</h4>
+            <div>XP actuel: <strong>${formatLarge(p.xp)}</strong> <span class="small">(${formatRaw(p.xp)})</span></div>
+            <div>XP vers niveau/rank suivant: <strong>${nextDisplay == null ? "—" : formatLarge(nextDisplay)}</strong>${nextDisplay == null ? "" : ` <span class="small">(${formatRaw(nextDisplay)})</span>`}</div>
+            <div>Niveau: <strong>${p.level}</strong></div>
+            <div>Rank: <strong>${p.rank}</strong></div>
+          </div>`;
+      }).join("");
+
+      const hpHtml = Object.entries(hp.parts).map(([part, val]) => `
+        <div class="card">
+          <div>${part}</div>
+          <div class="small">HP max: ${formatLarge(val.max)} (${formatRaw(val.max)})</div>
+          <input type="number" min="0" max="${val.max}" value="${val.current}"
+            oninput="${path}.hpCurrent['${part}']=Number(this.value)||0; save();" />
+          <div class="small">HP actuel: ${formatLarge(val.current)} (${formatRaw(val.current)})</div>
+        </div>`).join("");
+
+      const acHtml = Object.entries(ac.parts).map(([part, value]) => `<div class="card">${part}: <strong>${formatLarge(value)}</strong> <span class="small">(${formatRaw(value)})</span></div>`).join("");
+
+      return `
+        <div class="card">
+          <h2>
+            ${icon}
+            ${editableHeaderName
+              ? `<input value="${escapeHtml(entity.nom || title)}" oninput="${path}.nom=this.value; save();" style="max-width:260px" />`
+              : title}
+            <span class="badge">Rank global: ${rankGlobal}</span>
+          </h2>
+          ${removable ? `<button class="danger" onclick="${removeAction}">Supprimer ce compagnon</button>` : ""}
+          ${showNameField ? `
+          <div class="card">
+            <label>Nom</label>
+            <input value="${escapeHtml(entity.nom)}" oninput="${path}.nom=this.value; save();" />
+          </div>` : ""}
+
+          <h3>Description / Bio</h3>
+          ${renderTextArray(entity.bio, `${path}.bio`)}
+          <button onclick="${path}.bio.push(''); render();">+ Ajouter un champ Bio</button>
+
+          <h3>Statistiques</h3>
+          <div class="grid">${statsHtml}</div>
+
+          <h3>HP (total ${formatLarge(hp.total)} / ${formatRaw(hp.total)})</h3>
+          <div class="card">
+            <div class="line">
+              <input id="restHours_${key}" type="number" min="0" step="1" value="1" />
+              <button class="fit" onclick="applyRestRecovery('${key}')">Récupérer HP (repos)</button>
+            </div>
+            <div class="small">Récupération / heure: (HP actuel ÷ (HP max - HP actuel)) × (Level Constitution × Rank Constitution), arrondi normal</div>
+          </div>
+          <div class="body-grid">${hpHtml}</div>
+
+          <h3>AC</h3>
+          <div class="body-grid">${acHtml}</div>
+          <div class="card">
+            AC général: <strong>${formatLarge(ac.general)}</strong> <span class="small">(${formatRaw(ac.general)})</span>
+            <div class="small">36% du total AC: ${formatLarge(ac.total)} (${formatRaw(ac.total)})</div>
+            <div class="small">Formule: si Rankv ≤ (Rankf + Rankc) → AC = XPv × Lv × Rankv</div>
+            <div class="small">Sinon (pénalisation): AC = XPv × Lv × (Rankf + Rankc)</div>
+          </div>
+
+          <h3>Notes</h3>
+          ${renderTextArray(entity.notes, `${path}.notes`)}
+          <button onclick="${path}.notes.push(''); render();">+ Ajouter une note</button>
+
+          <div class="card">
+            <h4>Ajouter de l'XP</h4>
+            <div class="line">
+              <select id="xpStat_${key}">${STATS.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
+              <input id="xpValue_${key}" type="number" min="0" step="1" value="1" />
+              <select id="xpUnit_${key}">
+                ${XP_UNITS.map(u => `<option value="${u.key}">${u.label}</option>`).join("")}
+              </select>
+              <button class="fit" onclick="addXPTo('${key}')">Ajouter</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderPersonnage() {
+      const container = document.getElementById("personnage");
+      container.innerHTML = renderCharacterPanel(state.personnage, "state.personnage", "personnage", "Personnage", "🧙");
+    }
+
+    function renderCompagnons() {
+      const container = document.getElementById("compagnons");
+      const companionsHtml = state.compagnons.map((companion, i) =>
+        renderCharacterPanel(companion, `state.compagnons[${i}]`, `compagnon_${i}`, `Compagnon #${i + 1}`, "🧑‍🤝‍🧑", true, `removeCompanion(${i})`, true, false)
+      ).join("");
+      container.innerHTML = `
+        <h2>🧑‍🤝‍🧑 Compagnons</h2>
+        ${companionsHtml || "<div class='small'>Aucun compagnon. Clique sur + Compagnon.</div>"}
+      `;
+    }
+
+    function renderEntitySection(type, title, icon) {
+      const wrap = document.getElementById(type);
+      const section = state.sections[type];
+      const renderItem = (item, label, onPath, idx) => `
+        <div class="card">
+          <h4>${label}</h4>
+          <label>Nom</label>
+          <input value="${escapeHtml(item.nom)}" oninput="${onPath}.nom=this.value; save();" />
+          <label>Description</label>
+          <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
+          <label>Notes</label>
+          <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
+          <button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button>
+        </div>`;
+
+      const items = Array.isArray(section.items) ? section.items : [];
+      const itemsHtml = items.map((item, i) => renderItem(item, `${title} #${i + 1}`, `state.sections.${type}.items[${i}]`, i)).join("");
+      wrap.innerHTML = `
+        <h2>${icon} ${title}</h2>
+        ${itemsHtml || "<div class='small'>Aucun élément.</div>"}
+      `;
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
+    }
+
+    function addXPTo(key) {
+      const stat = document.getElementById(`xpStat_${key}`)?.value;
+      const rawInput = document.getElementById(`xpValue_${key}`)?.value ?? "0";
+      const normalizedInput = rawInput.replace(",", ".");
+      const xpFloat = Number(normalizedInput);
+      const xp = Number.isFinite(xpFloat) ? Math.floor(xpFloat) : 0;
+      const unitKey = document.getElementById(`xpUnit_${key}`)?.value || "";
+      const selectedUnit = XP_UNITS.find(u => u.key === unitKey) || XP_UNITS[0];
+      const totalToAdd = BigInt(Math.max(0, xp)) * selectedUnit.value;
+      if (!stat || xp < 0) return;
+      if (xpFloat !== xp) {
+        alert("Les décimales ne sont pas autorisées pour l'XP. La valeur a été arrondie à l'entier inférieur.");
+      }
+      const target = key === "personnage"
+        ? state.personnage
+        : state.compagnons[Number(key.replace("compagnon_", ""))];
+      if (!target) return;
+      let updatedXp = parseStoredXp(target.stats[stat].xp) + totalToAdd;
+      if (selectedUnit.value >= 1000n) {
+        const remainder = updatedXp % selectedUnit.value;
+        if (remainder > 0n && remainder < 1000n) {
+          updatedXp -= remainder;
+        }
+      }
+      target.stats[stat].xp = updatedXp.toString();
+      render();
+    }
+
+    function applyRestRecovery(key) {
+      const hours = Math.max(0, Math.floor(Number(document.getElementById(`restHours_${key}`)?.value) || 0));
+      if (hours <= 0) return;
+      const target = key === "personnage"
+        ? state.personnage
+        : state.compagnons[Number(key.replace("compagnon_", ""))];
+      if (!target) return;
+
+      const con = computeProgress(target.stats.Constitution.xp, false);
+      const constitutionScale = Math.max(1, con.level * con.rankValue);
+      const hp = computeHP(target);
+
+      for (let i = 0; i < hours; i++) {
+        for (const [part, values] of Object.entries(hp.parts)) {
+          const current = Number(target.hpCurrent[part]) || 0;
+          const missing = Math.max(0, values.max - current);
+          if (missing <= 0) continue;
+
+          const rawGain = (current / missing) * constitutionScale;
+          const gain = Math.max(1, Math.round(rawGain));
+          target.hpCurrent[part] = Math.min(values.max, current + gain);
+        }
+      }
+      render();
+    }
+
+    function addCompanion() {
+      state.compagnons.push(makeCharacter());
+      render();
+    }
+
+    function removeCompanion(idx) {
+      if (!confirm("Supprimer ce compagnon ?")) return;
+      state.compagnons.splice(idx, 1);
+      render();
+    }
+
+    function addExtra(type) {
+      state.sections[type].items.push(defaultItem());
+      render();
+    }
+
+    function removeExtra(type, idx) {
+      if (!confirm("Supprimer cet élément ?")) return;
+      state.sections[type].items.splice(idx, 1);
+      render();
+    }
+
+    function toggleSection(id) {
+      document.getElementById(id).classList.toggle("hidden");
+    }
+
+    function resetAll() {
+      if (!confirm("Confirmer la réinitialisation complète ? Toutes les données seront supprimées.")) return;
+      state = makeState();
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    }
+
+    function exportJson() {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "rpg-tracker-save.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function importJson(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          state = normalizeState(parsed);
+          render();
+        } catch {
+          alert("Fichier JSON invalide.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function normalizeCharacterData(raw) {
+      const baseCharacter = makeCharacter();
+      const normalized = { ...baseCharacter, ...(raw || {}) };
+      normalized.stats = { ...baseCharacter.stats, ...(raw?.stats || {}) };
+      for (const stat of STATS) {
+        normalized.stats[stat] = { xp: parseStoredXp(normalized.stats[stat]?.xp).toString() };
+      }
+      normalized.bio = Array.isArray(normalized.bio) && normalized.bio.length ? normalized.bio : [""];
+      normalized.notes = Array.isArray(normalized.notes) && normalized.notes.length ? normalized.notes : [""];
+      normalized.hpCurrent = { ...(raw?.hpCurrent || {}) };
+      return normalized;
+    }
+
+    function normalizeState(parsed) {
+      const base = makeState();
+      const merged = { ...base, ...parsed };
+      merged.personnage = normalizeCharacterData(parsed?.personnage);
+      const parsedCompanions = Array.isArray(parsed?.compagnons)
+        ? parsed.compagnons
+        : Array.isArray(parsed?.sections?.compagnons?.extras)
+          ? parsed.sections.compagnons.extras
+          : [];
+      merged.compagnons = parsedCompanions.map(c => normalizeCharacterData(c));
+      merged.sections = { ...base.sections, ...(parsed?.sections || {}) };
+      for (const type of ["equipements", "vehicules"]) {
+        const parsedItems = Array.isArray(parsed?.sections?.[type]?.items)
+          ? parsed.sections[type].items
+          : [
+              ...(parsed?.sections?.[type]?.base ? [parsed.sections[type].base] : []),
+              ...(Array.isArray(parsed?.sections?.[type]?.extras) ? parsed.sections[type].extras : [])
+            ];
+        merged.sections[type] = {
+          items: parsedItems.length ? parsedItems.map(x => ({ ...defaultItem(), ...x })) : [defaultItem()]
+        };
+      }
+      return merged;
+    }
+
+    function save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) state = normalizeState(JSON.parse(raw));
+      } catch {}
+    }
+
+    function render() {
+      nextXpCache.clear();
+      renderPersonnage();
+      renderCompagnons();
+      renderEntitySection("equipements", "Équipement", "🧰");
+      renderEntitySection("vehicules", "Véhicule", "🚗");
+      save();
+    }
+
+    load();
+    render();
+  </script>
+</body>
+</html>
