@@ -89,6 +89,7 @@
       gap: 6px;
     }
     .small { color: var(--muted); font-size: .86rem; }
+    label { display:block; margin: 6px 0 4px; }
     .values-stack {
       display: grid;
       grid-template-columns: 1fr;
@@ -428,21 +429,22 @@
     function renderEntitySection(type, title, icon) {
       const wrap = document.getElementById(type);
       const section = state.sections[type];
-      const renderItem = (item, label, onPath, idx) => `
+      const renderItem = (item, onPath, idx) => `
         <div class="card">
-          <h4>${label}</h4>
           <label>Nom</label>
           <input value="${escapeHtml(item.nom)}" oninput="${onPath}.nom=this.value; save();" />
           ${type === "equipements" ? `
             <label>Catégorie</label>
             <select onchange="${onPath}.categorie=this.value; save(); render();">${ITEM_CATEGORIES.map(cat => `<option value="${cat}" ${item.categorie === cat ? "selected" : ""}>${cat}</option>`).join("")}</select>
-            <label>Rank</label>
-            <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${item.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
-          ` : ""}
-          <label>Description</label>
+            <label>Description</label>
+          ` : '<label>Description</label>'}
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
           <label>Notes</label>
           <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
+          ${type === "equipements" ? `
+            <label>Rank</label>
+            <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${item.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+          ` : ""}
           <button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button>
         </div>`;
 
@@ -457,7 +459,7 @@
         : items;
       const itemsHtml = filteredItems.map((item, i) => {
         const realIdx = items.indexOf(item);
-        return renderItem(item, `${title} #${realIdx + 1}`, `state.sections.${type}.items[${realIdx}]`, realIdx);
+        return renderItem(item, `state.sections.${type}.items[${realIdx}]`, realIdx);
       }).join("");
 
       const equipementsTools = type === "equipements" ? `
