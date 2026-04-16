@@ -25,6 +25,7 @@
     .placeholder{min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
     .mini-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-top:6px}
     .overlay-panel{position:fixed;top:70px;right:12px;width:min(420px,calc(100vw - 24px));max-height:calc(100vh - 84px);overflow:auto;z-index:50;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+    .hidden{display:none}
     @media (min-width: 1200px){
       main{grid-template-columns:1fr 1fr}
       .right-panel{grid-column:2}
@@ -36,6 +37,9 @@
     <strong>🛠️ Admin PNJ (onglet dédié)</strong>
     <div class="row" style="flex:0 0 auto">
       <button onclick="addPNJ()">+ PNJ</button>
+      <button onclick="addAsset('objets')">+ Objet</button>
+      <button onclick="addAsset('vehicules')">+ Véhicule</button>
+      <button onclick="addAsset('batiments')">+ Bâtiment</button>
       <button onclick="toggleDicePanel()">🎲 Lancer de dés (bientôt)</button>
       <button onclick="resetAdminData()">🗑️ Reset</button>
       <button onclick="exportAdminJson()">💾 Export JSON</button>
@@ -54,9 +58,9 @@
   <main>
     <section class="section" id="pnjSource"></section>
     <section class="section right-panel" id="pnjSelected"></section>
-    <section class="section"><h2>🧰 Objets</h2><div class="placeholder">Section admin objets (base prête, détails à développer)</div></section>
-    <section class="section"><h2>🚗 Véhicules</h2><div class="placeholder">Section admin véhicules (base prête, détails à développer)</div></section>
-    <section class="section"><h2>🏢 Bâtiments</h2><div class="placeholder">Section bâtiments (à développer plus tard)</div></section>
+    <section class="section" id="objetsAdmin"></section>
+    <section class="section" id="vehiculesAdmin"></section>
+    <section class="section" id="batimentsAdmin"></section>
   </main>
 
   <script>
@@ -76,11 +80,13 @@
       hpCurrent: {},
       hpTemporaire: 0
     });
+    const makeAsset = () => ({ nom: "", description: "" });
 
     let state = {
       source: [makePNJ()],
       selected: [],
-      ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
+      assets: { objets: [], vehicules: [], batiments: [] },
+      ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '', sourceType: 'pnj' },
       openSourceIndex: null,
       openActiveIndices: []
     };
@@ -135,6 +141,7 @@
       return {
         source: state.source,
         selected: state.selected,
+        assets: state.assets,
         ui: state.ui,
         openSourceIndex: state.openSourceIndex,
         openActiveIndices: state.openActiveIndices
@@ -156,12 +163,34 @@
       return p;
     }
 
+    function normalizeAsset(raw) {
+      return { nom: String(raw?.nom || ''), description: String(raw?.description || '') };
+    }
+
+    function normalizeActiveEntity(raw) {
+      if (raw?.kind === 'vehicule' || raw?.kind === 'batiment') {
+        return { kind: raw.kind, data: normalizeAsset(raw.data) };
+      }
+      if (raw?.kind === 'pnj') {
+        return { kind: 'pnj', data: normalizePNJ(raw.data) };
+      }
+      if (raw?.stats) {
+        return { kind: 'pnj', data: normalizePNJ(raw) };
+      }
+      return { kind: 'pnj', data: makePNJ() };
+    }
+
     function load() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
-        state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizePNJ) : [];
+        state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizeActiveEntity) : [];
+        state.assets = {
+          objets: Array.isArray(parsed?.assets?.objets) ? parsed.assets.objets.map(normalizeAsset) : [],
+          vehicules: Array.isArray(parsed?.assets?.vehicules) ? parsed.assets.vehicules.map(normalizeAsset) : [],
+          batiments: Array.isArray(parsed?.assets?.batiments) ? parsed.assets.batiments.map(normalizeAsset) : []
+        };
         state.ui = { ...state.ui, ...(parsed?.ui || {}) };
         state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
         state.openActiveIndices = Array.isArray(parsed?.openActiveIndices) ? parsed.openActiveIndices.filter(Number.isInteger) : [];
@@ -179,7 +208,8 @@
       state = {
         source: [makePNJ()],
         selected: [],
-        ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
+        assets: { objets: [], vehicules: [], batiments: [] },
+        ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '', sourceType: 'pnj' },
         openSourceIndex: null,
         openActiveIndices: []
       };
@@ -204,8 +234,13 @@
         try {
           const parsed = JSON.parse(reader.result);
           state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
-          state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizePNJ) : [];
-          state.ui = { rankFilter: 'Tout', searchInput: '', searchTerm: '', ...(parsed?.ui || {}) };
+          state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizeActiveEntity) : [];
+          state.assets = {
+            objets: Array.isArray(parsed?.assets?.objets) ? parsed.assets.objets.map(normalizeAsset) : [],
+            vehicules: Array.isArray(parsed?.assets?.vehicules) ? parsed.assets.vehicules.map(normalizeAsset) : [],
+            batiments: Array.isArray(parsed?.assets?.batiments) ? parsed.assets.batiments.map(normalizeAsset) : []
+          };
+          state.ui = { rankFilter: 'Tout', searchInput: '', searchTerm: '', sourceType: 'pnj', ...(parsed?.ui || {}) };
           state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
           state.openActiveIndices = Array.isArray(parsed?.openActiveIndices) ? parsed.openActiveIndices.filter(Number.isInteger) : [];
           render();
@@ -243,7 +278,13 @@
       }
     }
 
-    function getPool(pool) { return pool === 'selected' ? state.selected : state.source; }
+    function getPNJ(pool, idx) {
+      if (pool === 'source') return state.source[idx] || null;
+      const entity = state.selected[idx];
+      if (!entity) return null;
+      if (entity.kind === 'pnj') return entity.data;
+      return null;
+    }
 
     function toggleSourceEditor(index) {
       state.openSourceIndex = state.openSourceIndex === index ? null : index;
@@ -269,7 +310,7 @@
     }
 
     function updatePNJStat(pool, idx, stat, field, value) {
-      const pnj = getPool(pool)[idx];
+      const pnj = getPNJ(pool, idx);
       if (!pnj) return;
       if (field === 'level') pnj.stats[stat].level = Math.min(10, Math.max(1, Number(value) || 1));
       if (field === 'rank') { pnj.stats[stat].rank = value; pnj.stats[stat].level = 1; }
@@ -277,7 +318,7 @@
     }
 
     function applyRest(pool, idx, hours) {
-      const pnj = getPool(pool)[idx];
+      const pnj = getPNJ(pool, idx);
       if (!pnj) return;
       const hp = computeHP(pnj);
       const h = Math.max(0, Math.floor(Number(hours) || 0));
@@ -311,13 +352,25 @@
       const idx = Number(document.getElementById('sourcePick')?.value || 0);
       const src = state.source[idx];
       if (!src) return;
-      state.selected.push(normalizePNJ(JSON.parse(JSON.stringify(src))));
+      state.selected.push({ kind: 'pnj', data: normalizePNJ(JSON.parse(JSON.stringify(src))) });
       state.openActiveIndices = Array.from(new Set([...state.openActiveIndices, state.selected.length - 1]));
       render();
     }
 
+    function addAsset(type) {
+      if (!state.assets[type]) return;
+      state.assets[type].push(makeAsset());
+      render();
+    }
+
+    function removeAsset(type, idx) {
+      if (!state.assets[type]) return;
+      state.assets[type].splice(idx, 1);
+      render();
+    }
+
     function renderPNJEditor(pool, idx) {
-      const p = getPool(pool)[idx];
+      const p = getPNJ(pool, idx);
       if (!p) return '<div class="muted">Sélectionne un PNJ.</div>';
       const hp = computeHP(p);
       const stats = STATS.map(stat => `
@@ -333,26 +386,43 @@
         <div class="card">
           <strong>${part}</strong>
           <div class="muted">HP max: ${values.max == null ? '?' : values.max}</div>
-          <input type="number" value="${values.current}" ${values.max == null ? '' : `max="${values.max}"`} min="0" oninput="getPool('${pool}')[${idx}].hpCurrent['${part}']=Number(this.value)||0; save();" />
+          <input type="number" value="${values.current}" ${values.max == null ? '' : `max="${values.max}"`} min="0" oninput="const p=getPNJ('${pool}',${idx}); if(p){p.hpCurrent['${part}']=Number(this.value)||0; save();}" />
         </div>
       `).join('');
 
       return `
         <div class="card">
           <label>Nom</label>
-          <input value="${escapeHtml(p.nom)}" oninput="getPool('${pool}')[${idx}].nom=this.value; save();" />
+          <input value="${escapeHtml(p.nom)}" oninput="const p=getPNJ('${pool}',${idx}); if(p){p.nom=this.value; save();}" />
           <label>Bio</label>
-          <textarea oninput="getPool('${pool}')[${idx}].bio[0]=this.value; save();">${escapeHtml(p.bio[0] || '')}</textarea>
+          <textarea oninput="const p=getPNJ('${pool}',${idx}); if(p){p.bio[0]=this.value; save();}">${escapeHtml(p.bio[0] || '')}</textarea>
           <div class="grid">${stats}</div>
           <h4>HP (total ${hp.undefinedRank ? '1' : hp.currentTotal} / ${hp.undefinedRank ? '?' : hp.total})</h4>
           <label>HP temporaire</label>
-          <input type="number" value="${p.hpTemporaire}" oninput="getPool('${pool}')[${idx}].hpTemporaire=Number(this.value)||0; save();" />
+          <input type="number" value="${p.hpTemporaire}" oninput="const p=getPNJ('${pool}',${idx}); if(p){p.hpTemporaire=Number(this.value)||0; save();}" />
           <div class="row">
             <input id="rest_${pool}_${idx}" type="number" min="0" step="1" value="1" />
             <button onclick="applyRest('${pool}', ${idx}, document.getElementById('rest_${pool}_${idx}').value)">Récupérer HP (repos)</button>
           </div>
           <div class="grid">${hpParts}</div>
         </div>
+      `;
+    }
+
+    function renderAssetSection(type, title, icon) {
+      const list = state.assets[type] || [];
+      return `
+        <h2>${icon} ${title}</h2>
+        <div class="muted">Gestion simple des assets (${title.toLowerCase()}).</div>
+        ${list.map((asset, i) => `
+          <div class="card">
+            <label>Nom</label>
+            <input value="${escapeHtml(asset.nom)}" oninput="state.assets['${type}'][${i}].nom=this.value; save();" />
+            <label>Description</label>
+            <textarea oninput="state.assets['${type}'][${i}].description=this.value; save();">${escapeHtml(asset.description || '')}</textarea>
+            <button onclick="removeAsset('${type}', ${i})">Supprimer</button>
+          </div>
+        `).join('') || '<div class="muted">Aucun élément.</div>'}
       `;
     }
 
@@ -393,17 +463,27 @@
           <button onclick="openAllActiveEditors()">Tout ouvrir</button>
           <button onclick="closeAllActiveEditors()">Tout fermer</button>
         </div>
-        ${state.selected.map((p, i) => `
+        ${state.selected.map((entity, i) => `
           <div class="card">
-            <button class="list-item" onclick="toggleActiveEditor(${i})">${escapeHtml(p.nom || 'PNJ actif')} — Rank global: ${globalRank(p)}</button>
-            <div class="mini-stats">${STATS.map(stat => `<div class="muted">${stat}: Lv ${p.stats[stat].level} / ${p.stats[stat].rank}</div>`).join('')}</div>
-            ${state.openActiveIndices.includes(i) ? `
-              ${renderPNJEditor('selected', i)}
-              <button onclick="removeSelected(${i})">Supprimer ce PNJ actif</button>
-            ` : ''}
+            ${entity.kind === 'pnj' ? `
+              <button class="list-item" onclick="toggleActiveEditor(${i})">${escapeHtml(entity.data.nom || 'PNJ actif')} — Rank global: ${globalRank(entity.data)}</button>
+              <div class="mini-stats">${STATS.map(stat => `<div class="muted">${stat}: Lv ${entity.data.stats[stat].level} / ${entity.data.stats[stat].rank}</div>`).join('')}</div>
+              ${state.openActiveIndices.includes(i) ? `
+                ${renderPNJEditor('selected', i)}
+                <button onclick="removeSelected(${i})">Supprimer ce PNJ actif</button>
+              ` : ''}
+            ` : `
+              <div class="list-item">${entity.kind === 'vehicule' ? '🚗' : '🏢'} ${escapeHtml(entity.data.nom || 'Asset actif')}</div>
+              <div class="muted">${escapeHtml(entity.data.description || '')}</div>
+              <button onclick="removeSelected(${i})">Retirer</button>
+            `}
           </div>
         `).join('') || '<div class="muted">Aucun PNJ actif.</div>'}
       `;
+
+      document.getElementById('objetsAdmin').innerHTML = renderAssetSection('objets', 'Objets', '🧰');
+      document.getElementById('vehiculesAdmin').innerHTML = renderAssetSection('vehicules', 'Véhicules', '🚗');
+      document.getElementById('batimentsAdmin').innerHTML = renderAssetSection('batiments', 'Bâtiments', '🏢');
 
       save();
     }
