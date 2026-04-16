@@ -35,7 +35,12 @@
     <strong>🛠️ Admin PNJ (onglet dédié)</strong>
     <div class="row" style="flex:0 0 auto">
       <button onclick="addPNJ()">+ PNJ</button>
-      <button onclick="duplicateToSelected()">Dupliquer vers sélection</button>
+      <button onclick="resetAdminData()">🗑️ Reset</button>
+      <button onclick="exportAdminJson()">💾 Export JSON</button>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">📂 Import JSON
+        <input id="adminImportInput" type="file" accept="application/json" style="display:none" onchange="importAdminJson(event)" />
+      </label>
+      <button onclick="saveToDataFolder()">📁 Sauver dans data PNJ</button>
     </div>
   </header>
 
@@ -115,6 +120,16 @@
 
     function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
+    function snapshotState() {
+      return {
+        source: state.source,
+        selected: state.selected,
+        ui: state.ui,
+        openSourceIndex: state.openSourceIndex,
+        openActiveIndices: state.openActiveIndices
+      };
+    }
+
     function normalizePNJ(raw) {
       const base = makePNJ();
       const p = { ...base, ...(raw || {}) };
@@ -145,6 +160,67 @@
       if (mainRaw) {
         const main = JSON.parse(mainRaw);
         if (Array.isArray(main?.pnjs) && main.pnjs.length) state.source = main.pnjs.map(normalizePNJ);
+      }
+    }
+
+    function resetAdminData() {
+      if (!confirm('Réinitialiser toutes les données admin PNJ ?')) return;
+      state = {
+        source: [makePNJ()],
+        selected: [],
+        ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
+        openSourceIndex: null,
+        openActiveIndices: []
+      };
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    }
+
+    function exportAdminJson() {
+      const blob = new Blob([JSON.stringify(snapshotState(), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'admin-pnj-data.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function importAdminJson(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
+          state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizePNJ) : [];
+          state.ui = { rankFilter: 'Tout', searchInput: '', searchTerm: '', ...(parsed?.ui || {}) };
+          state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
+          state.openActiveIndices = Array.isArray(parsed?.openActiveIndices) ? parsed.openActiveIndices.filter(Number.isInteger) : [];
+          render();
+        } catch {
+          alert('Fichier JSON invalide.');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+
+    async function saveToDataFolder() {
+      if (!window.showDirectoryPicker) {
+        alert("Le navigateur ne permet pas l'écriture directe de dossier. Utilise Export JSON puis enregistre le fichier dans 'data PNJ'.");
+        return;
+      }
+      try {
+        const root = await window.showDirectoryPicker();
+        const dataDir = await root.getDirectoryHandle('data PNJ', { create: true });
+        const fileHandle = await dataDir.getFileHandle('admin-pnj-data.json', { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(snapshotState(), null, 2));
+        await writable.close();
+        alert("Données enregistrées dans le dossier 'data PNJ' (fichier admin-pnj-data.json).");
+      } catch (err) {
+        if (err?.name !== 'AbortError') alert('Échec de la sauvegarde dossier.');
       }
     }
 
