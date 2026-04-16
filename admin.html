@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin PNJ</title>
+  <style>
+    :root { --bg:#13151d; --panel:#1d2130; --panel2:#252a3d; --text:#f2f5ff; --muted:#aeb5ce; --border:#3a4364; --accent:#71a3ff; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Arial,sans-serif}
+    header{padding:10px;border-bottom:1px solid var(--border);background:#0d1018;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    main{padding:12px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+    .section,.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px}
+    .card{background:#1a1f2e}
+    input,select,textarea,button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:7px 10px}
+    button{cursor:pointer}
+    button:hover{border-color:var(--accent)}
+    textarea{width:100%;min-height:70px}
+    label{display:block;margin:6px 0 4px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .row > *{flex:1}
+    .muted{color:var(--muted);font-size:.9rem}
+    .list-item{width:100%;text-align:left;margin-bottom:6px}
+    .mini-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-top:6px}
+    .overlay-panel{position:fixed;top:70px;right:12px;width:min(420px,calc(100vw - 24px));max-height:calc(100vh - 84px);overflow:auto;z-index:50;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+    .hidden{display:none}
+    @media (min-width: 1200px){
+      main{grid-template-columns:1fr 1fr}
+      .right-panel{grid-column:2}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>🛠️ Admin PNJ (onglet dédié)</strong>
+    <div class="row" style="flex:0 0 auto">
+      <button onclick="addPNJ()">+ PNJ</button>
+      <button onclick="addAsset('objets')">+ Objet</button>
+      <button onclick="addAsset('vehicules')">+ Véhicule</button>
+      <button onclick="addAsset('batiments')">+ Structure</button>
+      <button onclick="toggleDicePanel()">🎲 Lancer de dés (bientôt)</button>
+      <button onclick="resetAdminData()">🗑️ Reset</button>
+      <button onclick="exportAdminJson()">💾 Export JSON</button>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">📂 Import JSON
+        <input id="adminImportInput" type="file" accept="application/json" style="display:none" onchange="importAdminJson(event)" />
+      </label>
+      <button onclick="saveToDataFolder()">📁 Sauver dans data PNJ</button>
+    </div>
+  </header>
+  <aside id="dicePanel" class="overlay-panel hidden">
+    <h3>🎲 Menu dés (placeholder)</h3>
+    <div class="muted">Ce panneau partagé servira plus tard à faire interagir PNJ, personnages, compagnons et assets.</div>
+    <div style="margin-top:8px"><button onclick="toggleDicePanel()">Fermer</button></div>
+  </aside>
+
+  <main>
+    <section class="section" id="pnjSource"></section>
+    <section class="section right-panel" id="pnjSelected"></section>
+    <section class="section" id="objetsAdmin"></section>
+    <section class="section" id="vehiculesAdmin"></section>
+    <section class="section" id="batimentsAdmin"></section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'rpg_tracker_admin_v2';
+    const MAIN_KEY = 'rpg_tracker_v2';
+    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse"];
+    const HP_PARTS = { Tête: 0.10, Torse: 0.20, "Bras gauche": 0.12, "Bras droit": 0.12, "Main gauche": 0.05, "Main droite": 0.05, "Jambe gauche": 0.13, "Jambe droite": 0.13, "Pied gauche": 0.05, "Pied droit": 0.05 };
+    const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
+    const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
+    const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
+    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined"];
+    const ITEM_CATEGORIES = ["Équipement", "Objets de valeurs", "Module"];
+    const ITEM_FILTERS = [...ITEM_CATEGORIES, "Tout"];
+    const EQUIPMENT_REQUIREMENT_STATS = ["Force", "Constitution", "Intelligence", "Sagesse"];
+    const EQUIPMENT_TYPES = ["Arme", "Armure", "Autre"];
+    const WEAPON_TYPES = ["énergétique", "balistique et/ou explosif", "matérielles", "magique"];
+    const DAMAGE_TYPES = ["Tranchants", "Perforations", "Contusions"];
+    const ARMOR_TYPES = ["énergétique", "matérielles", "magique"];
+
+    const makePNJ = () => ({
+      nom: "",
+      bio: [""],
+      stats: Object.fromEntries(STATS.map(s => [s, { level: 1, rank: 'None' }])),
+      hpCurrent: {},
+      hpTemporaire: 0,
+      equippedItems: []
+    });
+    const makeAsset = () => ({ nom: "", description: "" });
+    const defaultItem = (number = 1) => ({
+      nom: String(number),
+      description: "",
+      categorie: ITEM_CATEGORIES[0],
+      level: 1,
+      rank: "None",
+      equippePar: "none",
+      prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, "None"])),
+      equipementType: "Autre",
+      weaponTypes: [],
+      damageTypes: [],
+      armorTypes: [],
+      armorBodyPart: "",
+      moduleUseRank: "None",
+      moduleSlotRank: "None",
+      moduleEnergyRank: "None",
+      moduleType: "utilitaire"
+    });
+    const makeMachine = (number = 1) => ({
+      nom: String(number),
+      description: "",
+      level: 1,
+      rank: "None",
+      structure: { level: 1, rank: "None" },
+      moduleMinRank: "None",
+      moduleSlots: [{ count: 1, rank: "None", types: ["arme", "protection", "utilitaire"] }],
+      energySlots: [{ count: 1, rank: "None" }],
+      equippedModules: []
+    });
+    const defaultSections = () => ({
+      equipements: { items: [], monnaies: { pointEchange: 0, pieceEnergie: 0, monnaieLocale: 0 }, filtreCategorie: "Tout", searchInput: "", searchTerm: "" },
+      vehicules: { items: [] },
+      batiments: { items: [] }
+    });
+
+    let state = {
+      source: [makePNJ()],
+      selected: [],
+      sections: defaultSections(),
+      ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
+      openSourceIndex: null,
+      openAssetEditors: { equipements: null, vehicules: null, batiments: null },
+      openActiveIndices: []
+    };
+
+    const rankToValue = (rankLabel) => {
+      const idx = RANKS.indexOf(rankLabel);
+      return idx >= 0 ? idx + 1 : RANKS.length;
+    };
+
+    function computeHP(pnj) {
+      const con = pnj.stats.Constitution || { level: 1, rank: 'None' };
+      if (con.rank === 'Undefined') {
+        const parts = {};
+        Object.keys(HP_PARTS).forEach(part => {
+          if (pnj.hpCurrent[part] == null) pnj.hpCurrent[part] = 1;
+          pnj.hpCurrent[part] = Math.max(1, Math.floor(Number(pnj.hpCurrent[part]) || 1));
+          parts[part] = { max: null, current: pnj.hpCurrent[part] };
+        });
+        return { total: null, currentTotal: 1, parts, undefinedRank: true };
+      }
+      const total = Math.max(1, Math.floor(100 * con.level * (rankToValue(con.rank) ** 2)));
+      let currentTotal = 0;
+      const parts = {};
+      Object.entries(HP_PARTS).forEach(([part, ratio]) => {
+        const max = Math.max(1, Math.floor(total * ratio));
+        if (pnj.hpCurrent[part] == null) pnj.hpCurrent[part] = max;
+        pnj.hpCurrent[part] = Math.max(0, Math.min(Number(pnj.hpCurrent[part]) || 0, max));
+        currentTotal += pnj.hpCurrent[part];
+        parts[part] = { max, current: pnj.hpCurrent[part] };
+      });
+      return { total, currentTotal, parts, undefinedRank: false };
+    }
+
+    function globalRank(pnj) {
+      const avg = Math.floor(STATS.reduce((acc, s) => acc + rankToValue(pnj.stats[s].rank), 0) / STATS.length);
+      return RANKS[Math.max(0, Math.min(RANKS.length - 1, avg - 1))];
+    }
+
+    function regenPerHour(partMax, partCurrent) {
+      const hpTotal = Math.max(1, Number(partMax) || 1);
+      const hpActuel = Math.max(0, Number(partCurrent) || 0);
+      return Math.max(1, Math.floor(((hpActuel * hpActuel) / hpTotal) * (hpActuel / hpTotal)));
+    }
+
+    function normalizeItem(raw, index) {
+      const item = { ...defaultItem(index + 1), ...(raw || {}) };
+      item.nom = String(item.nom || String(index + 1));
+      item.description = String(item.description || "");
+      item.categorie = ITEM_CATEGORIES.includes(item.categorie) ? item.categorie : ITEM_CATEGORIES[0];
+      item.level = Math.min(10, Math.max(1, Math.floor(Number(item.level) || 1)));
+      item.rank = RANKS.includes(item.rank) ? item.rank : "None";
+      item.equipementType = EQUIPMENT_TYPES.includes(item.equipementType) ? item.equipementType : "Autre";
+      item.prerequisRanks = Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, RANKS.includes(item?.prerequisRanks?.[stat]) ? item.prerequisRanks[stat] : "None"]));
+      item.weaponTypes = Array.isArray(item.weaponTypes) ? item.weaponTypes.filter(v => WEAPON_TYPES.includes(v)) : [];
+      item.damageTypes = Array.isArray(item.damageTypes) ? item.damageTypes.filter(v => DAMAGE_TYPES.includes(v)) : [];
+      item.armorTypes = Array.isArray(item.armorTypes) ? item.armorTypes.filter(v => ARMOR_TYPES.includes(v)) : [];
+      item.armorBodyPart = Object.keys(HP_PARTS).includes(item.armorBodyPart) ? item.armorBodyPart : "";
+      item.moduleUseRank = RANKS.includes(item.moduleUseRank) ? item.moduleUseRank : "None";
+      item.moduleSlotRank = RANKS.includes(item.moduleSlotRank) ? item.moduleSlotRank : "None";
+      item.moduleEnergyRank = RANKS.includes(item.moduleEnergyRank) ? item.moduleEnergyRank : "None";
+      item.moduleType = ["arme", "protection", "utilitaire"].includes(item.moduleType) ? item.moduleType : "utilitaire";
+      return item;
+    }
+
+    function normalizeMachine(raw, index) {
+      const base = makeMachine(index + 1);
+      const m = { ...base, ...(raw || {}) };
+      m.nom = String(m.nom || String(index + 1));
+      m.description = String(m.description || "");
+      m.level = Math.min(10, Math.max(1, Math.floor(Number(m.level) || 1)));
+      m.rank = RANKS.includes(m.rank) ? m.rank : "None";
+      m.structure = { level: Math.min(10, Math.max(1, Math.floor(Number(m?.structure?.level) || 1))), rank: RANKS.includes(m?.structure?.rank) ? m.structure.rank : "None" };
+      m.moduleMinRank = RANKS.includes(m.moduleMinRank) ? m.moduleMinRank : "None";
+      m.moduleSlots = Array.isArray(m.moduleSlots) && m.moduleSlots.length ? m.moduleSlots.map(slot => ({
+        count: Math.max(1, Math.floor(Number(slot?.count) || 1)),
+        rank: RANKS.includes(slot?.rank) ? slot.rank : "None",
+        types: Array.isArray(slot?.types) ? slot.types.filter(t => ["arme", "protection", "utilitaire"].includes(t)) : ["arme", "protection", "utilitaire"]
+      })) : base.moduleSlots;
+      m.energySlots = Array.isArray(m.energySlots) && m.energySlots.length ? m.energySlots.map(slot => ({
+        count: Math.max(1, Math.floor(Number(slot?.count) || 1)),
+        rank: RANKS.includes(slot?.rank) ? slot.rank : "None"
+      })) : base.energySlots;
+      m.equippedModules = Array.isArray(m.equippedModules) ? m.equippedModules.map(v => Number(v)).filter(Number.isInteger) : [];
+      return m;
+    }
+
+    function normalizeSections(rawSections) {
+      const base = defaultSections();
+      const equipItems = Array.isArray(rawSections?.equipements?.items) ? rawSections.equipements.items : [];
+      const vehiculesItems = Array.isArray(rawSections?.vehicules?.items) ? rawSections.vehicules.items : [];
+      const batimentsItems = Array.isArray(rawSections?.batiments?.items) ? rawSections.batiments.items : [];
+      return {
+        equipements: {
+          items: equipItems.map((x, i) => normalizeItem(x, i)),
+          monnaies: {
+            pointEchange: Number(rawSections?.equipements?.monnaies?.pointEchange) || 0,
+            pieceEnergie: Number(rawSections?.equipements?.monnaies?.pieceEnergie) || 0,
+            monnaieLocale: Number(rawSections?.equipements?.monnaies?.monnaieLocale) || 0
+          },
+          filtreCategorie: ITEM_FILTERS.includes(rawSections?.equipements?.filtreCategorie) ? rawSections.equipements.filtreCategorie : base.equipements.filtreCategorie,
+          searchInput: String(rawSections?.equipements?.searchInput || ""),
+          searchTerm: String(rawSections?.equipements?.searchTerm || "")
+        },
+        vehicules: { items: vehiculesItems.map((x, i) => normalizeMachine(x, i)) },
+        batiments: { items: batimentsItems.map((x, i) => normalizeMachine(x, i)) }
+      };
+    }
+
+    function saveMainMirror() {
+      try {
+        const mainRaw = localStorage.getItem(MAIN_KEY);
+        const mainState = mainRaw ? JSON.parse(mainRaw) : {};
+        mainState.pnjs = state.source.map(p => normalizePNJ(p));
+        mainState.sections = { ...(mainState.sections || {}), ...state.sections };
+        localStorage.setItem(MAIN_KEY, JSON.stringify(mainState));
+      } catch {}
+    }
+
+    function save(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      saveMainMirror();
+    }
+
+    function toggleDicePanel() {
+      document.getElementById('dicePanel')?.classList.toggle('hidden');
+    }
+
+    function snapshotState() {
+      return {
+        source: state.source,
+        selected: state.selected,
+        sections: state.sections,
+        ui: state.ui,
+        openSourceIndex: state.openSourceIndex,
+        openAssetEditors: state.openAssetEditors,
+        openActiveIndices: state.openActiveIndices
+      };
+    }
+
+    function normalizePNJ(raw) {
+      const base = makePNJ();
+      const p = { ...base, ...(raw || {}) };
+      p.stats = { ...base.stats, ...(raw?.stats || {}) };
+      for (const stat of STATS) {
+        const level = Math.min(10, Math.max(1, Math.floor(Number(p.stats[stat]?.level) || 1)));
+        const rank = RANKS.includes(p.stats[stat]?.rank) ? p.stats[stat].rank : 'None';
+        p.stats[stat] = { level, rank };
+      }
+      p.bio = Array.isArray(p.bio) && p.bio.length ? p.bio : [''];
+      p.hpCurrent = { ...(raw?.hpCurrent || {}) };
+      p.hpTemporaire = Number(raw?.hpTemporaire) || 0;
+      p.equippedItems = Array.isArray(raw?.equippedItems) ? raw.equippedItems.map(v => Number(v)).filter(Number.isInteger) : [];
+      return p;
+    }
+
+    function normalizeAsset(raw) {
+      return { nom: String(raw?.nom || ''), description: String(raw?.description || '') };
+    }
+
+    function normalizeActiveEntity(raw) {
+      if (raw?.kind === 'vehicule' || raw?.kind === 'batiment') {
+        return { kind: raw.kind, data: normalizeAsset(raw.data) };
+      }
+      if (raw?.kind === 'pnj') {
+        return { kind: 'pnj', data: normalizePNJ(raw.data) };
+      }
+      if (raw?.stats) {
+        return { kind: 'pnj', data: normalizePNJ(raw) };
+      }
+      return { kind: 'pnj', data: makePNJ() };
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
+          state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizeActiveEntity) : [];
+          state.sections = normalizeSections(parsed?.sections);
+          state.ui = { ...state.ui, ...(parsed?.ui || {}) };
+          state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
+          state.openAssetEditors = {
+            equipements: Number.isInteger(parsed?.openAssetEditors?.equipements) ? parsed.openAssetEditors.equipements : null,
+            vehicules: Number.isInteger(parsed?.openAssetEditors?.vehicules) ? parsed.openAssetEditors.vehicules : null,
+            batiments: Number.isInteger(parsed?.openAssetEditors?.batiments) ? parsed.openAssetEditors.batiments : null
+          };
+          state.openActiveIndices = Array.isArray(parsed?.openActiveIndices) ? parsed.openActiveIndices.filter(Number.isInteger) : [];
+          return;
+        }
+      } catch {}
+      try {
+        const mainRaw = localStorage.getItem(MAIN_KEY);
+        if (mainRaw) {
+          const main = JSON.parse(mainRaw);
+          if (Array.isArray(main?.pnjs) && main.pnjs.length) state.source = main.pnjs.map(normalizePNJ);
+          state.sections = normalizeSections(main?.sections);
+        }
+      } catch {}
+    }
+
+    function resetAdminData() {
+      if (!confirm('Réinitialiser toutes les données admin PNJ ?')) return;
+      state = {
+        source: [makePNJ()],
+        selected: [],
+        sections: defaultSections(),
+        ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
+        openSourceIndex: null,
+        openAssetEditors: { equipements: null, vehicules: null, batiments: null },
+        openActiveIndices: []
+      };
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    }
+
+    function exportAdminJson() {
+      const blob = new Blob([JSON.stringify(snapshotState(), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'admin-pnj-data.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function importAdminJson(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
+          state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizeActiveEntity) : [];
+          state.sections = normalizeSections(parsed?.sections);
+          state.ui = { rankFilter: 'Tout', searchInput: '', searchTerm: '', ...(parsed?.ui || {}) };
+          state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
+          state.openAssetEditors = {
+            equipements: Number.isInteger(parsed?.openAssetEditors?.equipements) ? parsed.openAssetEditors.equipements : null,
+            vehicules: Number.isInteger(parsed?.openAssetEditors?.vehicules) ? parsed.openAssetEditors.vehicules : null,
+            batiments: Number.isInteger(parsed?.openAssetEditors?.batiments) ? parsed.openAssetEditors.batiments : null
+          };
+          state.openActiveIndices = Array.isArray(parsed?.openActiveIndices) ? parsed.openActiveIndices.filter(Number.isInteger) : [];
+          render();
+        } catch {
+          alert('Fichier JSON invalide.');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+
+    async function saveToDataFolder() {
+      if (!window.showDirectoryPicker) {
+        alert("Le navigateur ne permet pas l'écriture directe de dossier. Utilise Export JSON puis enregistre le fichier dans 'data PNJ'.");
+        return;
+      }
+      try {
+        const root = await window.showDirectoryPicker();
+        const dataDir = await root.getDirectoryHandle('data PNJ', { create: true });
+        const fileHandle = await dataDir.getFileHandle('admin-pnj-data.json', { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(snapshotState(), null, 2));
+        await writable.close();
+        alert("Données enregistrées dans le dossier 'data PNJ' (fichier admin-pnj-data.json).");
+      } catch (err) {
+        if (err?.name !== 'AbortError') alert('Échec de la sauvegarde dossier.');
+      }
+    }
+
+    function ensureAccess() {
+      const pwd = prompt('Mot de passe admin :');
+      if (pwd !== '123') {
+        document.body.innerHTML = '<div style="padding:30px;color:white">Accès refusé.</div>';
+        throw new Error('Accès refusé');
+      }
+    }
+
+    function getPNJ(pool, idx) {
+      if (pool === 'source') return state.source[idx] || null;
+      const entity = state.selected[idx];
+      if (!entity) return null;
+      if (entity.kind === 'pnj') return entity.data;
+      return null;
+    }
+
+    function toggleSourceEditor(index) {
+      state.openSourceIndex = state.openSourceIndex === index ? null : index;
+      render();
+    }
+
+    function toggleAssetEditor(type, index) {
+      state.openAssetEditors[type] = state.openAssetEditors[type] === index ? null : index;
+      render();
+    }
+
+    function toggleActiveEditor(index) {
+      const set = new Set(state.openActiveIndices);
+      if (set.has(index)) set.delete(index);
+      else set.add(index);
+      state.openActiveIndices = Array.from(set).sort((a, b) => a - b);
+      render();
+    }
+
+    function openAllActiveEditors() {
+      state.openActiveIndices = state.selected.map((_, i) => i);
+      render();
+    }
+
+    function closeAllActiveEditors() {
+      state.openActiveIndices = [];
+      render();
+    }
+
+    function updatePNJStat(pool, idx, stat, field, value) {
+      const pnj = getPNJ(pool, idx);
+      if (!pnj) return;
+      if (field === 'level') pnj.stats[stat].level = Math.min(10, Math.max(1, Number(value) || 1));
+      if (field === 'rank') { pnj.stats[stat].rank = value; pnj.stats[stat].level = 1; }
+      render();
+    }
+
+    function applyRest(pool, idx, hours) {
+      const pnj = getPNJ(pool, idx);
+      if (!pnj) return;
+      const hp = computeHP(pnj);
+      const h = Math.max(0, Math.floor(Number(hours) || 0));
+      for (let i = 0; i < h; i++) {
+        for (const [part, values] of Object.entries(hp.parts)) {
+          if (values.max == null) continue;
+          const current = Number(pnj.hpCurrent[part]) || 0;
+          pnj.hpCurrent[part] = Math.min(values.max, current + regenPerHour(values.max, current));
+        }
+      }
+      render();
+    }
+
+    function addPNJ(){ state.source.push(makePNJ()); state.openSourceIndex = state.source.length - 1; render(); }
+    function removePNJ(i){
+      state.source.splice(i,1);
+      if(!state.source.length) state.source.push(makePNJ());
+      if (state.openSourceIndex === i) state.openSourceIndex = null;
+      if (state.openSourceIndex != null && state.openSourceIndex > i) state.openSourceIndex -= 1;
+      render();
+    }
+    function removeSelected(i){
+      state.selected.splice(i,1);
+      state.openActiveIndices = state.openActiveIndices.filter(x => x !== i).map(x => x > i ? x - 1 : x);
+      render();
+    }
+
+    function applySearch(){ state.ui.searchTerm = state.ui.searchInput || ''; render(); }
+
+    function duplicateToSelected() {
+      const idx = Number(document.getElementById('sourcePick')?.value || 0);
+      const src = state.source[idx];
+      if (!src) return;
+      state.selected.push({ kind: 'pnj', data: normalizePNJ(JSON.parse(JSON.stringify(src))) });
+      state.openActiveIndices = Array.from(new Set([...state.openActiveIndices, state.selected.length - 1]));
+      render();
+    }
+
+    function toggleAssetChoice(type, idx, field, value, checked) {
+      const item = state.sections[type]?.items?.[idx];
+      if (!item) return;
+      const set = new Set(item[field] || []);
+      if (checked) set.add(value);
+      else set.delete(value);
+      item[field] = Array.from(set);
+      render();
+    }
+
+    function addSelectedEquipmentToPNJ(pool, idx) {
+      if (pool !== 'selected') return;
+      const pnj = getPNJ(pool, idx);
+      if (!pnj) return;
+      const pick = document.getElementById(`equipPick_${pool}_${idx}`);
+      const itemIndex = Number(pick?.value);
+      const item = state.sections.equipements.items[itemIndex];
+      if (!item || item.categorie !== 'Équipement') return;
+      pnj.equippedItems = Array.isArray(pnj.equippedItems) ? pnj.equippedItems : [];
+      pnj.equippedItems.push(itemIndex);
+      render();
+    }
+
+    function removeSelectedEquipmentFromPNJ(pool, idx, equipSlotIndex) {
+      const pnj = getPNJ(pool, idx);
+      if (!pnj || !Array.isArray(pnj.equippedItems)) return;
+      pnj.equippedItems.splice(equipSlotIndex, 1);
+      render();
+    }
+
+    function addAsset(type) {
+      const key = type === 'objets' ? 'equipements' : type;
+      if (!state.sections[key]) return;
+      const items = state.sections[key].items;
+      if (key === 'equipements') items.push(defaultItem(items.length + 1));
+      else items.push(makeMachine(items.length + 1));
+      render();
+    }
+
+    function removeAsset(type, idx) {
+      if (!state.sections[type]) return;
+      state.sections[type].items.splice(idx, 1);
+      render();
+    }
+
+    function addMachineSlot(type, idx, slotType) {
+      const machine = state.sections[type]?.items?.[idx];
+      if (!machine) return;
+      if (slotType === 'module') machine.moduleSlots.push({ count: 1, rank: 'None', types: ['arme', 'protection', 'utilitaire'] });
+      if (slotType === 'energy') machine.energySlots.push({ count: 1, rank: 'None' });
+      render();
+    }
+
+    function machineStructureTotal(machine) {
+      return Math.max(1, machine.structure.level * (rankToValue(machine.structure.rank) ** 2));
+    }
+
+    function rankIndex(rank) {
+      const idx = RANKS.indexOf(rank);
+      return idx >= 0 ? idx : 0;
+    }
+
+    function buildCapacityByRank(entries, rankKey, countKey, typeFilter = null) {
+      const counts = Array.from({ length: RANKS.length }, () => 0n);
+      (entries || []).forEach(entry => {
+        if (typeFilter && (!Array.isArray(entry.types) || !entry.types.includes(typeFilter))) return;
+        const idx = rankIndex(entry?.[rankKey] || 'None');
+        const count = BigInt(Math.max(1, Math.floor(Number(entry?.[countKey]) || 1)));
+        counts[idx] += count;
+      });
+      return counts;
+    }
+
+    function canSatisfyStrictCapacity(capacityByRank, demandRanks) {
+      const available = capacityByRank.slice();
+      const demands = [...demandRanks].sort((a, b) => b - a);
+      for (const demandRankIdx of demands) {
+        let provider = -1;
+        for (let r = demandRankIdx; r < available.length; r++) {
+          if (available[r] > 0n) {
+            provider = r;
+            break;
+          }
+        }
+        if (provider < 0) return false;
+        available[provider] -= 1n;
+        if (provider > demandRankIdx) {
+          const produced = 1n << BigInt(provider - demandRankIdx);
+          available[demandRankIdx] += (produced - 1n);
+        }
+      }
+      return true;
+    }
+
+    function addModuleToMachine(type, machineIdx) {
+      const machine = state.sections[type]?.items?.[machineIdx];
+      const select = document.getElementById(`modulePick_${type}_${machineIdx}`);
+      if (!machine || !select) return;
+      const moduleIndex = Number(select.value);
+      const mod = state.sections.equipements.items[moduleIndex];
+      if (!mod || mod.categorie !== 'Module') return;
+      if (rankToValue(machine.rank) < rankToValue(mod.moduleUseRank || 'None')) return alert('Rank du véhicule/structure insuffisant pour ce module.');
+      if (rankToValue(machine.moduleMinRank || 'None') < rankToValue(mod.rank || 'None')) return alert('Rank minimum de module insuffisant.');
+
+      const already = Array.isArray(machine.equippedModules) ? machine.equippedModules : [];
+      const equippedModules = already.map(i => state.sections.equipements.items[i]).filter(Boolean).filter(i => i.categorie === 'Module');
+      const modulesAfterEquip = [...equippedModules, mod];
+      const moduleTypes = ['arme', 'protection', 'utilitaire'];
+      for (const typeKey of moduleTypes) {
+        const demands = modulesAfterEquip
+          .filter(m => (m.moduleType || 'utilitaire') === typeKey)
+          .map(m => rankIndex(m.moduleSlotRank || 'None'));
+        const capacity = buildCapacityByRank(machine.moduleSlots, 'rank', 'count', typeKey);
+        if (!canSatisfyStrictCapacity(capacity, demands)) {
+          return alert(`Capacité emplacement module insuffisante pour le type ${typeKey}.`);
+        }
+      }
+
+      const energyDemands = modulesAfterEquip.map(m => rankIndex(m.moduleEnergyRank || 'None'));
+      const energyCapacity = buildCapacityByRank(machine.energySlots, 'rank', 'count');
+      if (!canSatisfyStrictCapacity(energyCapacity, energyDemands)) {
+        return alert('Capacité énergie insuffisante.');
+      }
+
+      machine.equippedModules = [...already, moduleIndex];
+      render();
+    }
+
+    function removeModuleFromMachine(type, machineIdx, slotIndex) {
+      const machine = state.sections[type]?.items?.[machineIdx];
+      if (!machine || !Array.isArray(machine.equippedModules)) return;
+      machine.equippedModules.splice(slotIndex, 1);
+      render();
+    }
+
+    function renderPNJEditor(pool, idx) {
+      const p = getPNJ(pool, idx);
+      if (!p) return '<div class="muted">Sélectionne un PNJ.</div>';
+      const hp = computeHP(p);
+      const stats = STATS.map(stat => `
+        <div class="card">
+          <strong>${stat}</strong>
+          <label>Niveau</label>
+          <select onchange="updatePNJStat('${pool}', ${idx}, '${stat}', 'level', this.value)">${Array.from({length:10},(_,i)=>i+1).map(level=>`<option value="${level}" ${p.stats[stat].level===level?'selected':''}>${level}</option>`).join('')}</select>
+          <label>Rank</label>
+          <select onchange="updatePNJStat('${pool}', ${idx}, '${stat}', 'rank', this.value)">${RANKS.map(r=>`<option value="${r}" ${p.stats[stat].rank===r?'selected':''}>${r}</option>`).join('')}</select>
+        </div>`).join('');
+
+      const hpParts = Object.entries(hp.parts).map(([part, values]) => `
+        <div class="card">
+          <strong>${part}</strong>
+          <div class="muted">HP max: ${values.max == null ? '?' : values.max}</div>
+          <input type="number" value="${values.current}" ${values.max == null ? '' : `max="${values.max}"`} min="0" oninput="const p=getPNJ('${pool}',${idx}); if(p){p.hpCurrent['${part}']=Number(this.value)||0; save();}" />
+        </div>
+      `).join('');
+
+      const equipOptions = state.sections.equipements.items
+        .map((item, itemIdx) => ({ item, itemIdx }))
+        .filter(({ item }) => item.categorie === 'Équipement');
+      const equippedList = (p.equippedItems || []).map((itemIndex, slotIndex) => {
+        const item = state.sections.equipements.items[itemIndex];
+        const name = item?.nom ? escapeHtml(item.nom) : `Objet supprimé (#${itemIndex})`;
+        return `<div class="row"><div>${name}</div><button onclick="removeSelectedEquipmentFromPNJ('${pool}', ${idx}, ${slotIndex})">Retirer</button></div>`;
+      }).join('');
+
+      return `
+        <div class="card">
+          <label>Nom</label>
+          <input value="${escapeHtml(p.nom)}" oninput="const p=getPNJ('${pool}',${idx}); if(p){p.nom=this.value; save();}" />
+          <label>Bio</label>
+          <textarea oninput="const p=getPNJ('${pool}',${idx}); if(p){p.bio[0]=this.value; save();}">${escapeHtml(p.bio[0] || '')}</textarea>
+          <div class="grid">${stats}</div>
+          <h4>HP (total ${hp.undefinedRank ? '1' : hp.currentTotal} / ${hp.undefinedRank ? '?' : hp.total})</h4>
+          <label>HP temporaire</label>
+          <input type="number" value="${p.hpTemporaire}" oninput="const p=getPNJ('${pool}',${idx}); if(p){p.hpTemporaire=Number(this.value)||0; save();}" />
+          <div class="row">
+            <input id="rest_${pool}_${idx}" type="number" min="0" step="1" value="1" />
+            <button onclick="applyRest('${pool}', ${idx}, document.getElementById('rest_${pool}_${idx}').value)">Récupérer HP (repos)</button>
+          </div>
+          <div class="grid">${hpParts}</div>
+          ${pool === 'selected' ? `
+            <h4>Équipements du PNJ actif</h4>
+            <div class="row">
+              <select id="equipPick_${pool}_${idx}">
+                ${equipOptions.map(({ item, itemIdx }) => `<option value="${itemIdx}">${escapeHtml(item.nom || `Objet ${itemIdx + 1}`)} (${item.equipementType || 'Autre'})</option>`).join('')}
+              </select>
+              <button onclick="addSelectedEquipmentToPNJ('${pool}', ${idx})">+ Ajouter équipement</button>
+            </div>
+            ${equipOptions.length ? '' : '<div class="muted">Aucun objet de catégorie Équipement disponible.</div>'}
+            <div>${equippedList || '<div class="muted">Aucun équipement équipé.</div>'}</div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderEquipementsSection() {
+      const section = state.sections.equipements;
+      const allItems = section.items || [];
+      const filtered = allItems.filter(item => {
+        const categoryOk = section.filtreCategorie === 'Tout' || item.categorie === section.filtreCategorie;
+        const nameOk = !section.searchTerm || String(item.nom || '').toLowerCase().includes(section.searchTerm.toLowerCase());
+        return categoryOk && nameOk;
+      });
+      return `
+        <h2>🧰 Objets</h2>
+        <div class="card">
+          <label>Point d'échange</label>
+          <input type="number" value="${section.monnaies.pointEchange}" oninput="state.sections.equipements.monnaies.pointEchange=Number(this.value)||0;save();" />
+          <label>Pièce d'énergie</label>
+          <input type="number" value="${section.monnaies.pieceEnergie}" oninput="state.sections.equipements.monnaies.pieceEnergie=Number(this.value)||0;save();" />
+          <label>Monnaie locale</label>
+          <input type="number" value="${section.monnaies.monnaieLocale}" oninput="state.sections.equipements.monnaies.monnaieLocale=Number(this.value)||0;save();" />
+        </div>
+        <div class="card">
+          <label>Filtre catégorie</label>
+          <select onchange="state.sections.equipements.filtreCategorie=this.value;render();">${ITEM_FILTERS.map(c => `<option value="${c}" ${section.filtreCategorie===c?'selected':''}>${c}</option>`).join('')}</select>
+          <label>Recherche nom</label>
+          <div class="row">
+            <input value="${escapeHtml(section.searchInput || '')}" oninput="state.sections.equipements.searchInput=this.value;save();" />
+            <button onclick="state.sections.equipements.searchTerm=state.sections.equipements.searchInput||'';render();">Rechercher</button>
+          </div>
+        </div>
+        ${filtered.map(item => {
+          const idx = allItems.indexOf(item);
+          return `
+            <button class="list-item" onclick="toggleAssetEditor('equipements', ${idx})">${escapeHtml(item.nom || `Objet ${idx + 1}`)} — ${item.categorie}</button>
+            ${state.openAssetEditors.equipements === idx ? `
+              <div class="card">
+                <label>Nom</label>
+                <input value="${escapeHtml(item.nom)}" oninput="state.sections.equipements.items[${idx}].nom=this.value;save();" />
+                <label>Catégorie</label>
+                <select onchange="state.sections.equipements.items[${idx}].categorie=this.value;render();">${ITEM_CATEGORIES.map(c => `<option value="${c}" ${item.categorie===c?'selected':''}>${c}</option>`).join('')}</select>
+                <div class="grid">
+                  <div>
+                    <label>Niveau</label>
+                    <select onchange="state.sections.equipements.items[${idx}].level=Math.min(10,Math.max(1,Number(this.value)||1));save();">${Array.from({length:10},(_,i)=>i+1).map(l=>`<option value="${l}" ${Number(item.level||1)===l?'selected':''}>${l}</option>`).join('')}</select>
+                  </div>
+                  <div>
+                    <label>Rank</label>
+                    <select onchange="state.sections.equipements.items[${idx}].rank=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${item.rank===r?'selected':''}>${r}</option>`).join('')}</select>
+                  </div>
+                </div>
+                ${item.categorie==='Équipement' ? `
+                  <div class="card">
+                    <h4>Prérequis</h4>
+                    <div class="grid">
+                      ${EQUIPMENT_REQUIREMENT_STATS.map(stat => `
+                        <div>
+                          <label>${stat}</label>
+                          <select onchange="state.sections.equipements.items[${idx}].prerequisRanks['${stat}']=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${(item.prerequisRanks?.[stat]||'None')===r?'selected':''}>${r}</option>`).join('')}</select>
+                        </div>`).join('')}
+                    </div>
+                  </div>` : ''}
+                <label>Description</label>
+                <textarea oninput="state.sections.equipements.items[${idx}].description=this.value;save();">${escapeHtml(item.description)}</textarea>
+                ${item.categorie==='Module' ? `
+                  <div class="card">
+                    <h4>Prérequis module</h4>
+                    <label>Rank d'utilisation</label>
+                    <select onchange="state.sections.equipements.items[${idx}].moduleUseRank=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${(item.moduleUseRank||'None')===r?'selected':''}>${r}</option>`).join('')}</select>
+                    <label>Emplacement d'utilisation</label>
+                    <select onchange="state.sections.equipements.items[${idx}].moduleSlotRank=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${(item.moduleSlotRank||'None')===r?'selected':''}>${r}</option>`).join('')}</select>
+                    <label>Énergie requise</label>
+                    <select onchange="state.sections.equipements.items[${idx}].moduleEnergyRank=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${(item.moduleEnergyRank||'None')===r?'selected':''}>${r}</option>`).join('')}</select>
+                    <label>Type de module</label>
+                    <select onchange="state.sections.equipements.items[${idx}].moduleType=this.value;save();">
+                      ${['arme','protection','utilitaire'].map(t=>`<option value="${t}" ${(item.moduleType||'utilitaire')===t?'selected':''}>${t}</option>`).join('')}
+                    </select>
+                  </div>
+                ` : ''}
+                ${item.categorie==='Équipement' ? `
+                  <h4>Détails d'équipement</h4>
+                  <div class="card">
+                    <label>Type d'équipement</label>
+                    <select onchange="state.sections.equipements.items[${idx}].equipementType=this.value;if(this.value!=='Arme'){state.sections.equipements.items[${idx}].weaponTypes=[];state.sections.equipements.items[${idx}].damageTypes=[];}if(this.value!=='Armure'){state.sections.equipements.items[${idx}].armorTypes=[];state.sections.equipements.items[${idx}].armorBodyPart='';}save();render();">${EQUIPMENT_TYPES.map(t=>`<option value="${t}" ${(item.equipementType||'Autre')===t?'selected':''}>${t}</option>`).join('')}</select>
+                    ${(item.equipementType||'Autre')==='Arme' ? `
+                      <label>Type d'arme</label>
+                      <div class="grid">${WEAPON_TYPES.map(o=>`<label><input type="checkbox" ${(item.weaponTypes||[]).includes(o)?'checked':''} onchange="toggleAssetChoice('equipements',${idx},'weaponTypes','${o}',this.checked)" /> ${o}</label>`).join('')}</div>
+                      <label>Dégâts</label>
+                      <div class="grid">${DAMAGE_TYPES.map(o=>`<label><input type="checkbox" ${(item.damageTypes||[]).includes(o)?'checked':''} onchange="toggleAssetChoice('equipements',${idx},'damageTypes','${o}',this.checked)" /> ${o}</label>`).join('')}</div>
+                    ` : ''}
+                    ${(item.equipementType||'Autre')==='Armure' ? `
+                      <label>Type d'armure</label>
+                      <div class="grid">${ARMOR_TYPES.map(o=>`<label><input type="checkbox" ${(item.armorTypes||[]).includes(o)?'checked':''} onchange="toggleAssetChoice('equipements',${idx},'armorTypes','${o}',this.checked)" /> ${o}</label>`).join('')}</div>
+                      <label>Partie du corps</label>
+                      <select onchange="state.sections.equipements.items[${idx}].armorBodyPart=this.value;save();"><option value="">Aucune</option>${Object.keys(HP_PARTS).map(p=>`<option value="${p}" ${(item.armorBodyPart||'')===p?'selected':''}>${p}</option>`).join('')}</select>
+                    ` : ''}
+                  </div>` : ''}
+                <div style="margin-top:10px">
+                  <button onclick="removeAsset('equipements', ${idx})">Supprimer</button>
+                </div>
+              </div>
+            ` : ''}
+          `;
+        }).join('') || '<div class="muted">Aucun objet.</div>'}
+      `;
+    }
+
+    function renderSimpleAssetSection(type, title, icon) {
+      const list = state.sections[type]?.items || [];
+      const modules = state.sections.equipements.items
+        .map((item, moduleIndex) => ({ item, moduleIndex }))
+        .filter(({ item }) => item.categorie === 'Module');
+      const filteredList = list.filter(asset => {
+        const rankFilter = state.ui[`${type}_rankFilter`];
+        const term = String(state.ui[`${type}_searchTerm`] || '').toLowerCase();
+        const rankOk = !rankFilter || rankFilter === 'Tout' || rankFilter === asset.rank;
+        const searchOk = !term || String(asset.nom || '').toLowerCase().includes(term);
+        return rankOk && searchOk;
+      });
+      return `
+        <h2>${icon} ${title}</h2>
+        <div class="card">
+          <label>Filtre rank</label>
+          <select onchange="state.ui['${type}_rankFilter']=this.value;render();">
+            <option value="Tout" ${(!state.ui['${type}_rankFilter'] || state.ui['${type}_rankFilter']==='Tout')?'selected':''}>Tout</option>
+            ${RANKS.map(r=>`<option value="${r}" ${state.ui['${type}_rankFilter']===r?'selected':''}>${r}</option>`).join('')}
+          </select>
+          <div class="row" style="margin-top:8px">
+            <input placeholder="Recherche par nom" value="${escapeHtml(state.ui[`${type}_searchInput`] || '')}" oninput="state.ui['${type}_searchInput']=this.value;save();" />
+            <button onclick="state.ui['${type}_searchTerm']=state.ui['${type}_searchInput']||'';render();">Rechercher</button>
+          </div>
+        </div>
+        ${filteredList.map((asset) => `
+          ${(() => { const i = list.indexOf(asset); return `
+          <button class="list-item" onclick="toggleAssetEditor('${type}', ${i})">${escapeHtml(asset.nom || `${title} ${i + 1}`)}</button>
+          ${state.openAssetEditors[type] === i ? `
+            <div class="card">
+              <label>Nom</label>
+              <input value="${escapeHtml(asset.nom)}" oninput="state.sections['${type}'].items[${i}].nom=this.value; save();" />
+              <div class="grid">
+                <div>
+                  <label>Niveau</label>
+                  <select onchange="state.sections['${type}'].items[${i}].level=Number(this.value)||1;save();">${Array.from({length:10},(_,n)=>n+1).map(level=>`<option value="${level}" ${Number(asset.level||1)===level?'selected':''}>${level}</option>`).join('')}</select>
+                </div>
+                <div>
+                  <label>Rank</label>
+                  <select onchange="state.sections['${type}'].items[${i}].rank=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${(asset.rank||'None')===r?'selected':''}>${r}</option>`).join('')}</select>
+                </div>
+              </div>
+              <label>Description</label>
+              <textarea oninput="state.sections['${type}'].items[${i}].description=this.value; save();">${escapeHtml(asset.description || '')}</textarea>
+              <div class="card">
+                <h4>Structure</h4>
+                <div class="grid">
+                  <div>
+                    <label>Level structure</label>
+                    <select onchange="state.sections['${type}'].items[${i}].structure.level=Number(this.value)||1;save();render();">${Array.from({length:10},(_,n)=>n+1).map(level=>`<option value="${level}" ${Number(asset.structure?.level||1)===level?'selected':''}>${level}</option>`).join('')}</select>
+                  </div>
+                  <div>
+                    <label>Rank structure</label>
+                    <select onchange="state.sections['${type}'].items[${i}].structure.rank=this.value;save();render();">${RANKS.map(r=>`<option value="${r}" ${(asset.structure?.rank||'None')===r?'selected':''}>${r}</option>`).join('')}</select>
+                  </div>
+                </div>
+                <div class="muted">Structure total = level * rank^2 = ${machineStructureTotal(asset)}</div>
+              </div>
+              <div class="card">
+                <h4>Capacités modules/énergie</h4>
+                <label>Rank minimum module</label>
+                <select onchange="state.sections['${type}'].items[${i}].moduleMinRank=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${(asset.moduleMinRank||'None')===r?'selected':''}>${r}</option>`).join('')}</select>
+                <h5>Emplacements d'utilisation</h5>
+                ${(asset.moduleSlots||[]).map((slot,slotIdx)=>`
+                  <div class="grid">
+                    <input type="number" min="1" value="${slot.count}" oninput="state.sections['${type}'].items[${i}].moduleSlots[${slotIdx}].count=Math.max(1,Number(this.value)||1);save();" />
+                    <select onchange="state.sections['${type}'].items[${i}].moduleSlots[${slotIdx}].rank=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${slot.rank===r?'selected':''}>${r}</option>`).join('')}</select>
+                  </div>
+                  <div class="grid">
+                    ${['arme','protection','utilitaire'].map(t=>`<label><input type="checkbox" ${(slot.types||[]).includes(t)?'checked':''} onchange="const s=state.sections['${type}'].items[${i}].moduleSlots[${slotIdx}]; const set=new Set(s.types||[]); if(this.checked)set.add('${t}'); else set.delete('${t}'); s.types=Array.from(set); save();" /> ${t}</label>`).join('')}
+                  </div>
+                `).join('')}
+                <button onclick="addMachineSlot('${type}', ${i}, 'module')">+ Ajouter emplacement module</button>
+                <h5>Énergie</h5>
+                ${(asset.energySlots||[]).map((slot,slotIdx)=>`
+                  <div class="grid">
+                    <input type="number" min="1" value="${slot.count}" oninput="state.sections['${type}'].items[${i}].energySlots[${slotIdx}].count=Math.max(1,Number(this.value)||1);save();" />
+                    <select onchange="state.sections['${type}'].items[${i}].energySlots[${slotIdx}].rank=this.value;save();">${RANKS.map(r=>`<option value="${r}" ${slot.rank===r?'selected':''}>${r}</option>`).join('')}</select>
+                  </div>
+                `).join('')}
+                <button onclick="addMachineSlot('${type}', ${i}, 'energy')">+ Ajouter énergie</button>
+              </div>
+              <div class="card">
+                <h4>Modules équipés</h4>
+                <div class="row">
+                  <select id="modulePick_${type}_${i}">
+                    ${modules.length ? modules.map(({item,moduleIndex})=>`<option value="${moduleIndex}">${escapeHtml(item.nom || `Module ${moduleIndex+1}`)} (${item.rank})</option>`).join('') : '<option value="">Aucun module disponible</option>'}
+                  </select>
+                  <button ${modules.length ? '' : 'disabled'} onclick="addModuleToMachine('${type}', ${i})">+ Équiper module</button>
+                </div>
+                ${(asset.equippedModules||[]).map((moduleIndex,slotIdx)=>{const mod=state.sections.equipements.items[moduleIndex]; return `<div class="row"><div>${escapeHtml(mod?.nom || `Module supprimé #${moduleIndex}`)}</div><button onclick="removeModuleFromMachine('${type}', ${i}, ${slotIdx})">Retirer</button></div>`;}).join('') || '<div class="muted">Aucun module équipé.</div>'}
+              </div>
+              <div style="margin-top:10px">
+                <button onclick="removeAsset('${type}', ${i})">Supprimer</button>
+              </div>
+            </div>
+          ` : ''}
+          `; })()}
+        `).join('') || '<div class="muted">Aucun élément.</div>'}
+      `;
+    }
+
+    function render() {
+      const filtered = state.source.filter(p => {
+        const rankOk = state.ui.rankFilter === 'Tout' || globalRank(p) === state.ui.rankFilter;
+        const nameOk = !state.ui.searchTerm || String(p.nom || '').toLowerCase().includes(String(state.ui.searchTerm).toLowerCase());
+        return rankOk && nameOk;
+      });
+
+      document.getElementById('pnjSource').innerHTML = `
+        <h2>📚 Liste des PNJ</h2>
+        <div class="row">
+          <select onchange="state.ui.rankFilter=this.value; render();"><option ${state.ui.rankFilter==='Tout'?'selected':''}>Tout</option>${RANKS.map(r=>`<option value="${r}" ${state.ui.rankFilter===r?'selected':''}>${r}</option>`).join('')}</select>
+          <input value="${escapeHtml(state.ui.searchInput || '')}" placeholder="Recherche par nom" oninput="state.ui.searchInput=this.value; save();" />
+          <button onclick="applySearch()">Rechercher</button>
+        </div>
+        <div class="muted">Clique un PNJ pour ouvrir/fermer son éditeur. Un seul éditeur source reste ouvert.</div>
+        ${filtered.map((p) => {
+          const idx = state.source.indexOf(p);
+          return `
+            <button class="list-item" onclick="toggleSourceEditor(${idx})">${escapeHtml(p.nom || 'PNJ sans nom')} — Rank global: ${globalRank(p)}</button>
+            ${state.openSourceIndex === idx ? `
+              ${renderPNJEditor('source', idx)}
+              <button onclick="removePNJ(${idx})">Supprimer ce PNJ</button>
+            ` : ''}
+          `;
+        }).join('') || '<div class="muted">Aucun PNJ trouvé.</div>'}
+      `;
+
+      document.getElementById('pnjSelected').innerHTML = `
+        <h2>🧬 PNJ actif</h2>
+        <div class="row">
+          <select id="sourcePick">${state.source.map((p, i) => `<option value="${i}">${escapeHtml(p.nom || `PNJ ${i+1}`)}</option>`).join('')}</select>
+          <button onclick="duplicateToSelected()">Dupliquer depuis la liste</button>
+        </div>
+        <div class="row">
+          <button onclick="openAllActiveEditors()">Tout ouvrir</button>
+          <button onclick="closeAllActiveEditors()">Tout fermer</button>
+        </div>
+        ${state.selected.map((entity, i) => `
+          <div class="card">
+            ${entity.kind === 'pnj' ? `
+              <button class="list-item" onclick="toggleActiveEditor(${i})">${escapeHtml(entity.data.nom || 'PNJ actif')} — Rank global: ${globalRank(entity.data)}</button>
+              <div class="mini-stats">${STATS.map(stat => `<div class="muted">${stat}: Lv ${entity.data.stats[stat].level} / ${entity.data.stats[stat].rank}</div>`).join('')}</div>
+              ${state.openActiveIndices.includes(i) ? `
+                ${renderPNJEditor('selected', i)}
+                <button onclick="removeSelected(${i})">Supprimer ce PNJ actif</button>
+              ` : ''}
+            ` : `
+              <div class="list-item">${entity.kind === 'vehicule' ? '🚗' : '🏢'} ${escapeHtml(entity.data.nom || 'Asset actif')}</div>
+              <div class="muted">${escapeHtml(entity.data.description || '')}</div>
+              <button onclick="removeSelected(${i})">Retirer</button>
+            `}
+          </div>
+        `).join('') || '<div class="muted">Aucun PNJ actif.</div>'}
+      `;
+
+      document.getElementById('objetsAdmin').innerHTML = renderEquipementsSection();
+      document.getElementById('vehiculesAdmin').innerHTML = renderSimpleAssetSection('vehicules', 'Véhicules', '🚗');
+      document.getElementById('batimentsAdmin').innerHTML = renderSimpleAssetSection('batiments', 'Structures', '🏢');
+
+      save();
+    }
+
+    function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+    ensureAccess();
+    load();
+    render();
+  </script>
+</body>
+</html>
