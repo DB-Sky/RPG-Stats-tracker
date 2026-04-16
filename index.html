@@ -601,6 +601,54 @@
           render();
           return;
         }
+        const oldValues = oldParts[part] || { current: values.max, max: values.max };
+        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
+        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
+      }
+      item.equippePar = target;
+      if (!silent) render();
+    }
+
+    function toggleItemMultiChoice(type, idx, field, value, checked) {
+      const item = state.sections?.[type]?.items?.[idx];
+      if (!item) return;
+      const current = Array.isArray(item[field]) ? [...item[field]] : [];
+      const set = new Set(current);
+      if (checked) set.add(value);
+      else set.delete(value);
+      item[field] = Array.from(set);
+      save();
+      render();
+    }
+
+    function updateStatProgress(key, stat, field, rawValue) {
+      const target = getEntityByKey(key);
+      if (!target || !target.stats?.[stat]) return;
+
+      const oldHp = computeHP(target);
+      const oldParts = Object.fromEntries(Object.entries(oldHp.parts).map(([part, values]) => [part, { ...values }]));
+      const wasFull = !oldHp.isUndefinedRank && Object.values(oldParts).every(values => values.max != null && values.current >= values.max);
+
+      if (field === "level") {
+        target.stats[stat].level = Math.min(10, Math.max(1, Math.floor(Number(rawValue) || 1)));
+      } else if (field === "rank") {
+        target.stats[stat].rank = RANKS.includes(rawValue) ? rawValue : "None";
+        target.stats[stat].level = 1;
+      }
+
+      const newHp = computeHP(target);
+      for (const [part, values] of Object.entries(newHp.parts)) {
+        if (values.max == null) {
+          target.hpCurrent[part] = 1;
+          continue;
+        }
+        if (wasFull) {
+          target.hpCurrent[part] = values.max;
+          continue;
+        }
+        const oldValues = oldParts[part] || { current: values.max, max: values.max };
+        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
+        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
       }
       item.equippePar = target;
       if (!silent) render();
