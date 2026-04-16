@@ -186,7 +186,7 @@
       compagnons: [],
       sections: {
         equipements: {
-          items: [defaultItem(1)],
+          items: [],
           monnaies: {
             pointEchange: 0,
             pieceEnergie: 0,
@@ -196,7 +196,7 @@
           searchInput: "",
           searchTerm: ""
         },
-        vehicules: { items: [defaultItem(1)] }
+        vehicules: { items: [] }
       }
     });
 
@@ -545,13 +545,6 @@
           render();
           return;
         }
-        if (wasFull) {
-          target.hpCurrent[part] = values.max;
-          continue;
-        }
-        const oldValues = oldParts[part] || { current: values.max, max: values.max };
-        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
-        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
       }
       item.equippePar = target;
       if (!silent) render();
@@ -724,7 +717,7 @@
               armorTypes: Array.isArray(x?.armorTypes) ? x.armorTypes.filter(v => ARMOR_TYPES.includes(v)) : [],
               armorBodyPart: Object.keys(HP_PARTS).includes(x?.armorBodyPart) ? x.armorBodyPart : ""
             }))
-          : [defaultItem(1)];
+          : [];
 
         if (type === "equipements") {
           merged.sections[type] = {
