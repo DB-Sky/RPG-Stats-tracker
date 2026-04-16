@@ -250,7 +250,7 @@
       pnjs: [makeCharacter()],
       sections: {
         equipements: {
-          items: [],
+          items: [defaultItem(1)],
           monnaies: {
             pointEchange: 0,
             pieceEnergie: 0,
@@ -259,9 +259,9 @@
           filtreCategorie: "Tout",
           searchInput: "",
           searchTerm: "",
-          openIndex: null
+          openIndex: 0
         },
-        vehicules: { items: [], openIndex: null, rankFilter: "Tout", searchInput: "", searchTerm: "" }
+        vehicules: { items: [defaultItem(1)], openIndex: 0, rankFilter: "Tout", searchInput: "", searchTerm: "" }
       }
     });
 
@@ -748,13 +748,6 @@
           render();
           return;
         }
-        if (wasFull) {
-          target.hpCurrent[part] = values.max;
-          continue;
-        }
-        const oldValues = oldParts[part] || { current: values.max, max: values.max };
-        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
-        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
       }
       item.equippePar = target;
       if (!silent) render();
@@ -1040,7 +1033,7 @@
               moduleEnergyRank: RANKS.includes(x?.moduleEnergyRank) ? x.moduleEnergyRank : "None",
               moduleType: ["arme","protection","utilitaire"].includes(x?.moduleType) ? x.moduleType : "utilitaire"
             }))
-          : [];
+          : [defaultItem(1)];
 
         if (type === "equipements") {
           merged.sections[type] = {
