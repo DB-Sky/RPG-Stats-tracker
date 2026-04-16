@@ -139,7 +139,7 @@
     <section id="personnage" class="section"></section>
     <section id="compagnons" class="section hidden"></section>
     <section id="equipements" class="section"></section>
-    <section id="vehicules" class="section"></section>
+    <section id="vehicules" class="section hidden"></section>
   </main>
 
   <script>
@@ -581,10 +581,6 @@
           render();
           return;
         }
-        if (wasFull) {
-          target.hpCurrent[part] = values.max;
-          continue;
-        }
         const oldValues = oldParts[part] || { current: values.max, max: values.max };
         const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
         target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
@@ -672,6 +668,9 @@
     function addExtra(type) {
       const nextNumber = state.sections[type].items.length + 1;
       state.sections[type].items.push(defaultItem(nextNumber));
+      if (type === "vehicules") {
+        document.getElementById("vehicules")?.classList.remove("hidden");
+      }
       render();
     }
 
@@ -695,6 +694,7 @@
       state = makeState();
       localStorage.removeItem(STORAGE_KEY);
       document.getElementById("compagnons")?.classList.add("hidden");
+      document.getElementById("vehicules")?.classList.add("hidden");
       render();
     }
 
