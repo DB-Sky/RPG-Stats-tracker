@@ -95,6 +95,27 @@
       grid-template-columns: 1fr;
       gap: 8px;
     }
+    .check-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .check-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      background: var(--panel-2);
+    }
+    .check-chip input[type="checkbox"] {
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
@@ -432,20 +453,35 @@
 
               ${(item.equipementType || "Autre") === "Arme" ? `
                 <label>Type d'arme (choix multiples)</label>
-                <select multiple size="4" onchange="${onPath}.weaponTypes=Array.from(this.selectedOptions).map(o=>o.value); save();">
-                  ${WEAPON_TYPES.map(option => `<option value="${option}" ${(item.weaponTypes || []).includes(option) ? "selected" : ""}>${option}</option>`).join("")}
-                </select>
+                <div class="check-grid">
+                  ${WEAPON_TYPES.map(option => `
+                    <label class="check-chip">
+                      <input type="checkbox" ${(item.weaponTypes || []).includes(option) ? "checked" : ""} onchange="toggleItemMultiChoice('equipements', ${idx}, 'weaponTypes', '${option}', this.checked)" />
+                      <span>${option}</span>
+                    </label>
+                  `).join("")}
+                </div>
                 <label>Type de dégâts (choix multiples)</label>
-                <select multiple size="3" onchange="${onPath}.damageTypes=Array.from(this.selectedOptions).map(o=>o.value); save();">
-                  ${DAMAGE_TYPES.map(option => `<option value="${option}" ${(item.damageTypes || []).includes(option) ? "selected" : ""}>${option}</option>`).join("")}
-                </select>
+                <div class="check-grid">
+                  ${DAMAGE_TYPES.map(option => `
+                    <label class="check-chip">
+                      <input type="checkbox" ${(item.damageTypes || []).includes(option) ? "checked" : ""} onchange="toggleItemMultiChoice('equipements', ${idx}, 'damageTypes', '${option}', this.checked)" />
+                      <span>${option}</span>
+                    </label>
+                  `).join("")}
+                </div>
               ` : ""}
 
               ${(item.equipementType || "Autre") === "Armure" ? `
                 <label>Type d'armure (choix multiples)</label>
-                <select multiple size="3" onchange="${onPath}.armorTypes=Array.from(this.selectedOptions).map(o=>o.value); save();">
-                  ${ARMOR_TYPES.map(option => `<option value="${option}" ${(item.armorTypes || []).includes(option) ? "selected" : ""}>${option}</option>`).join("")}
-                </select>
+                <div class="check-grid">
+                  ${ARMOR_TYPES.map(option => `
+                    <label class="check-chip">
+                      <input type="checkbox" ${(item.armorTypes || []).includes(option) ? "checked" : ""} onchange="toggleItemMultiChoice('equipements', ${idx}, 'armorTypes', '${option}', this.checked)" />
+                      <span>${option}</span>
+                    </label>
+                  `).join("")}
+                </div>
                 <label>Partie du corps à équiper</label>
                 <select onchange="${onPath}.armorBodyPart=this.value; if(${onPath}.equippePar!=='none'){ tryEquipItem('equipements', ${idx}, ${onPath}.equippePar, true); } save(); render();">
                   <option value="" ${(item.armorBodyPart || "") === "" ? "selected" : ""}>Aucune</option>
@@ -545,9 +581,28 @@
           render();
           return;
         }
+        if (wasFull) {
+          target.hpCurrent[part] = values.max;
+          continue;
+        }
+        const oldValues = oldParts[part] || { current: values.max, max: values.max };
+        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
+        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
       }
       item.equippePar = target;
       if (!silent) render();
+    }
+
+    function toggleItemMultiChoice(type, idx, field, value, checked) {
+      const item = state.sections?.[type]?.items?.[idx];
+      if (!item) return;
+      const current = Array.isArray(item[field]) ? [...item[field]] : [];
+      const set = new Set(current);
+      if (checked) set.add(value);
+      else set.delete(value);
+      item[field] = Array.from(set);
+      save();
+      render();
     }
 
     function updateStatProgress(key, stat, field, rawValue) {
