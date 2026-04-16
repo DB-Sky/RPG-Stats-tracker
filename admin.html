@@ -24,6 +24,7 @@
     .list-item{width:100%;text-align:left;margin-bottom:6px}
     .placeholder{min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
     .mini-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-top:6px}
+    .overlay-panel{position:fixed;top:70px;right:12px;width:min(420px,calc(100vw - 24px));max-height:calc(100vh - 84px);overflow:auto;z-index:50;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
     @media (min-width: 1200px){
       main{grid-template-columns:1fr 1fr}
       .right-panel{grid-column:2}
@@ -35,7 +36,7 @@
     <strong>🛠️ Admin PNJ (onglet dédié)</strong>
     <div class="row" style="flex:0 0 auto">
       <button onclick="addPNJ()">+ PNJ</button>
-      <button onclick="openAssetsTab()">🗂️ Assets</button>
+      <button onclick="toggleDicePanel()">🎲 Lancer de dés (bientôt)</button>
       <button onclick="resetAdminData()">🗑️ Reset</button>
       <button onclick="exportAdminJson()">💾 Export JSON</button>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer">📂 Import JSON
@@ -44,6 +45,11 @@
       <button onclick="saveToDataFolder()">📁 Sauver dans data PNJ</button>
     </div>
   </header>
+  <aside id="dicePanel" class="overlay-panel hidden">
+    <h3>🎲 Menu dés (placeholder)</h3>
+    <div class="muted">Ce panneau partagé servira plus tard à faire interagir PNJ, personnages, compagnons et assets.</div>
+    <div style="margin-top:8px"><button onclick="toggleDicePanel()">Fermer</button></div>
+  </aside>
 
   <main>
     <section class="section" id="pnjSource"></section>
@@ -121,8 +127,8 @@
 
     function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
-    function openAssetsTab() {
-      window.open('assets.html', '_blank', 'noopener,noreferrer');
+    function toggleDicePanel() {
+      document.getElementById('dicePanel')?.classList.toggle('hidden');
     }
 
     function snapshotState() {

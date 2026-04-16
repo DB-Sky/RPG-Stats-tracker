@@ -126,6 +126,20 @@
       grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 8px;
     }
+    .overlay-panel {
+      position: fixed;
+      top: 70px;
+      right: 12px;
+      width: min(420px, calc(100vw - 24px));
+      max-height: calc(100vh - 84px);
+      overflow: auto;
+      z-index: 50;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
   </style>
 </head>
 <body>
@@ -134,7 +148,7 @@
     <button onclick="toggleSection('compagnons')">🧑‍🤝‍🧑 Compagnons</button>
     <button onclick="toggleSection('equipements')">🧰 Objets</button>
     <button onclick="toggleSection('vehicules')">🚗 Véhicule</button>
-    <button title="Réservé au futur système de dés">🎲 Lancer de dés (bientôt)</button>
+    <button onclick="toggleDicePanel()">🎲 Lancer de dés (bientôt)</button>
     <button onclick="addCompanion()">+ Compagnon</button>
     <button onclick="addExtra('equipements')">+ Objet</button>
     <button onclick="addExtra('vehicules')">+ Véhicule</button>
@@ -154,6 +168,11 @@
     <section id="equipements" class="section"></section>
     <section id="vehicules" class="section hidden"></section>
   </main>
+  <aside id="dicePanel" class="overlay-panel hidden">
+    <h3>🎲 Menu dés (placeholder)</h3>
+    <div class="small">Ce panneau sera partagé entre index/admin plus tard pour les interactions personnages, compagnons, PNJ, objets et véhicules.</div>
+    <div style="margin-top:8px"><button onclick="toggleDicePanel()">Fermer</button></div>
+  </aside>
 
   <script>
     const STORAGE_KEY = "rpg_tracker_v2";
@@ -618,13 +637,6 @@
           render();
           return;
         }
-        if (wasFull) {
-          target.hpCurrent[part] = values.max;
-          continue;
-        }
-        const oldValues = oldParts[part] || { current: values.max, max: values.max };
-        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
-        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
       }
       item.equippePar = target;
       if (!silent) render();
@@ -734,8 +746,8 @@
       window.open("admin.html", "_blank", "noopener,noreferrer");
     }
 
-    function openAssetsTab() {
-      window.open("assets.html", "_blank", "noopener,noreferrer");
+    function toggleDicePanel() {
+      document.getElementById("dicePanel")?.classList.toggle("hidden");
     }
 
     function resetAll() {
