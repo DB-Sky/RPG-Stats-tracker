@@ -209,7 +209,12 @@
       moduleUseRank: "None",
       moduleSlotRank: "None",
       moduleEnergyRank: "None",
-      moduleType: "utilitaire"
+      moduleType: "utilitaire",
+      structure: { level: 1, rank: "None" },
+      moduleMinRank: "None",
+      moduleSlots: [{ count: 1, rank: "None", types: ["arme", "protection", "utilitaire"] }],
+      energySlots: [{ count: 1, rank: "None" }],
+      equippedModules: []
     });
     function normalizeItemName(type, rawName, index) {
       const fallback = String(index + 1);
@@ -256,7 +261,7 @@
           searchTerm: "",
           openIndex: null
         },
-        vehicules: { items: [], openIndex: null }
+        vehicules: { items: [], openIndex: null, rankFilter: "Tout", searchInput: "", searchTerm: "" }
       }
     });
 
@@ -520,6 +525,18 @@
               </div>
             ` : ""}
           ` : ""}
+          ${type === "vehicules" ? `
+            <div class="inline-two">
+              <div>
+                <label>Niveau</label>
+                <select onchange="${onPath}.level=Math.min(10, Math.max(1, Number(this.value)||1)); save();">${Array.from({ length: 10 }, (_, i) => i + 1).map(level => `<option value="${level}" ${Number(item.level || 1) === level ? "selected" : ""}>${level}</option>`).join("")}</select>
+              </div>
+              <div>
+                <label>Rank</label>
+                <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${(item.rank || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+              </div>
+            </div>
+          ` : ""}
           <label>Description</label>
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
           ${type === "equipements" && item.categorie === "Équipement" ? `
@@ -575,6 +592,57 @@
               ${state.compagnons.map((companion, idx) => `<option value="compagnon_${idx}" ${item.equippePar === `compagnon_${idx}` ? "selected" : ""}>Compagnon ${idx + 1} (${escapeHtml(companion.nom || "Sans nom")})</option>`).join("")}
             </select>
           ` : ""}
+          ${type === "vehicules" ? `
+            <div class="card">
+              <h4>Structure</h4>
+              <div class="inline-two">
+                <div>
+                  <label>Level structure</label>
+                  <select onchange="${onPath}.structure.level=Math.min(10, Math.max(1, Number(this.value)||1)); save(); render();">${Array.from({ length: 10 }, (_, i) => i + 1).map(level => `<option value="${level}" ${Number(item.structure?.level || 1) === level ? "selected" : ""}>${level}</option>`).join("")}</select>
+                </div>
+                <div>
+                  <label>Rank structure</label>
+                  <select onchange="${onPath}.structure.rank=this.value; save(); render();">${RANKS.map(rank => `<option value="${rank}" ${(item.structure?.rank || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+                </div>
+              </div>
+              <div class="small">Structure total = level * rank^2 = ${Math.max(1, (Number(item.structure?.level || 1)) * (rankToValue(item.structure?.rank || "None") ** 2))}</div>
+            </div>
+            <div class="card">
+              <h4>Capacités modules/énergie</h4>
+              <label>Rank minimum module</label>
+              <select onchange="${onPath}.moduleMinRank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${(item.moduleMinRank || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+              <h4>Emplacements d'utilisation</h4>
+              ${(item.moduleSlots || []).map((slot, slotIdx) => `
+                <div class="inline-two">
+                  <input type="number" min="1" value="${slot.count}" oninput="${onPath}.moduleSlots[${slotIdx}].count=Math.max(1, Number(this.value)||1); save();" />
+                  <select onchange="${onPath}.moduleSlots[${slotIdx}].rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${slot.rank===rank?'selected':''}>${rank}</option>`).join("")}</select>
+                </div>
+                <div class="check-grid">
+                  ${["arme","protection","utilitaire"].map(t => `<label class="check-chip"><input type="checkbox" ${(slot.types||[]).includes(t)?'checked':''} onchange="const s=${onPath}.moduleSlots[${slotIdx}]; const set=new Set(s.types||[]); if(this.checked)set.add('${t}'); else set.delete('${t}'); s.types=Array.from(set); save();" /> ${t}</label>`).join("")}
+                </div>
+              `).join("")}
+              <button onclick="addVehicleSlot(${idx}, 'module')">+ Ajouter emplacement module</button>
+              <h4>Énergie</h4>
+              ${(item.energySlots || []).map((slot, slotIdx) => `
+                <div class="inline-two">
+                  <input type="number" min="1" value="${slot.count}" oninput="${onPath}.energySlots[${slotIdx}].count=Math.max(1, Number(this.value)||1); save();" />
+                  <select onchange="${onPath}.energySlots[${slotIdx}].rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${slot.rank===rank?'selected':''}>${rank}</option>`).join("")}</select>
+                </div>
+              `).join("")}
+              <button onclick="addVehicleSlot(${idx}, 'energy')">+ Ajouter énergie</button>
+            </div>
+            <div class="card">
+              <h4>Modules équipés</h4>
+              <div class="line">
+                <select id="vehicleModulePick_${idx}">${state.sections.equipements.items.map((m,mi)=>m.categorie==='Module'?`<option value='${mi}'>${escapeHtml(m.nom || `Module ${mi+1}`)} (${m.rank||'None'})</option>`:'').join('') || '<option value=\"\">Aucun module</option>'}</select>
+                <button onclick="addModuleToVehicle(${idx})">+ Équiper module</button>
+              </div>
+              ${(item.equippedModules || []).map((moduleIndex, slotIdx) => {
+                const mod = state.sections.equipements.items[moduleIndex];
+                return `<div class='line'><div>${escapeHtml(mod?.nom || `Module supprimé #${moduleIndex}`)}</div><button onclick='removeModuleFromVehicle(${idx}, ${slotIdx})'>Retirer</button></div>`;
+              }).join("") || "<div class='small'>Aucun module équipé.</div>"}
+            </div>
+          ` : ""}
           <div style="margin-top:8px"><button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button></div>
         </div>`;
 
@@ -586,7 +654,14 @@
             const searchOk = !term || [item.nom, item.description, item.categorie, item.rank, item.equipementType, ...(item.weaponTypes || []), ...(item.damageTypes || []), ...(item.armorTypes || []), item.armorBodyPart].some(v => String(v || "").toLowerCase().includes(term));
             return categoryOk && searchOk;
           })
-        : items;
+        : type === "vehicules"
+          ? items.filter(item => {
+              const rankOk = section.rankFilter === "Tout" || !section.rankFilter || item.rank === section.rankFilter;
+              const term = (section.searchTerm || "").trim().toLowerCase();
+              const searchOk = !term || String(item.nom || "").toLowerCase().includes(term);
+              return rankOk && searchOk;
+            })
+          : items;
       const itemsHtml = filteredItems.map((item) => {
         const realIdx = items.indexOf(item);
         return `
@@ -622,6 +697,18 @@
           <div class="line">
             <input value="${escapeHtml(section.searchInput || "")}" placeholder="Recherche..." oninput="state.sections.equipements.searchInput=this.value; save();" />
             <button class="fit" onclick="applyEquipementSearch()">Rechercher</button>
+          </div>
+        </div>
+      ` : type === "vehicules" ? `
+        <div class="card">
+          <h3>Filtres véhicule</h3>
+          <div class="line">
+            <label class="fit">Rank</label>
+            <select onchange="state.sections.vehicules.rankFilter=this.value; render();"><option value="Tout" ${section.rankFilter==="Tout"?"selected":""}>Tout</option>${RANKS.map(rank => `<option value="${rank}" ${section.rankFilter===rank?'selected':''}>${rank}</option>`).join("")}</select>
+          </div>
+          <div class="line">
+            <input value="${escapeHtml(section.searchInput || "")}" placeholder="Recherche véhicule..." oninput="state.sections.vehicules.searchInput=this.value; save();" />
+            <button class="fit" onclick="state.sections.vehicules.searchTerm=state.sections.vehicules.searchInput||''; render();">Rechercher</button>
           </div>
         </div>
       ` : "";
@@ -661,6 +748,13 @@
           render();
           return;
         }
+        if (wasFull) {
+          target.hpCurrent[part] = values.max;
+          continue;
+        }
+        const oldValues = oldParts[part] || { current: values.max, max: values.max };
+        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
+        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
       }
       item.equippePar = target;
       if (!silent) render();
@@ -675,6 +769,78 @@
       else set.delete(value);
       item[field] = Array.from(set);
       save();
+      render();
+    }
+
+    function rankIndex(rank) {
+      const idx = RANKS.indexOf(rank);
+      return idx >= 0 ? idx : 0;
+    }
+
+    function buildCapacityByRank(entries, rankKey, countKey, typeFilter = null) {
+      const counts = Array.from({ length: RANKS.length }, () => 0n);
+      (entries || []).forEach(entry => {
+        if (typeFilter && (!Array.isArray(entry.types) || !entry.types.includes(typeFilter))) return;
+        const idx = rankIndex(entry?.[rankKey] || "None");
+        const count = BigInt(Math.max(1, Math.floor(Number(entry?.[countKey]) || 1)));
+        counts[idx] += count;
+      });
+      return counts;
+    }
+
+    function canSatisfyStrictCapacity(capacityByRank, demandRanks) {
+      const available = capacityByRank.slice();
+      const demands = [...demandRanks].sort((a, b) => b - a);
+      for (const demandRankIdx of demands) {
+        let provider = -1;
+        for (let r = demandRankIdx; r < available.length; r++) {
+          if (available[r] > 0n) { provider = r; break; }
+        }
+        if (provider < 0) return false;
+        available[provider] -= 1n;
+        if (provider > demandRankIdx) {
+          const produced = 1n << BigInt(provider - demandRankIdx);
+          available[demandRankIdx] += (produced - 1n);
+        }
+      }
+      return true;
+    }
+
+    function addVehicleSlot(idx, slotType) {
+      const vehicle = state.sections.vehicules.items[idx];
+      if (!vehicle) return;
+      if (slotType === "module") vehicle.moduleSlots.push({ count: 1, rank: "None", types: ["arme", "protection", "utilitaire"] });
+      if (slotType === "energy") vehicle.energySlots.push({ count: 1, rank: "None" });
+      render();
+    }
+
+    function addModuleToVehicle(idx) {
+      const vehicle = state.sections.vehicules.items[idx];
+      const select = document.getElementById(`vehicleModulePick_${idx}`);
+      if (!vehicle || !select) return;
+      const moduleIndex = Number(select.value);
+      const mod = state.sections.equipements.items[moduleIndex];
+      if (!mod || mod.categorie !== "Module") return;
+      if (rankToValue(vehicle.rank || "None") < rankToValue(mod.moduleUseRank || "None")) return alert("Rank véhicule insuffisant.");
+      if (rankToValue(vehicle.moduleMinRank || "None") < rankToValue(mod.rank || "None")) return alert("Rank minimum module insuffisant.");
+      const equipped = (vehicle.equippedModules || []).map(i => state.sections.equipements.items[i]).filter(Boolean).filter(i => i.categorie === "Module");
+      const modulesAfter = [...equipped, mod];
+      for (const typeKey of ["arme", "protection", "utilitaire"]) {
+        const demands = modulesAfter.filter(m => (m.moduleType || "utilitaire") === typeKey).map(m => rankIndex(m.moduleSlotRank || "None"));
+        const capacity = buildCapacityByRank(vehicle.moduleSlots, "rank", "count", typeKey);
+        if (!canSatisfyStrictCapacity(capacity, demands)) return alert(`Capacité module insuffisante (${typeKey}).`);
+      }
+      const energyDemands = modulesAfter.map(m => rankIndex(m.moduleEnergyRank || "None"));
+      const energyCapacity = buildCapacityByRank(vehicle.energySlots, "rank", "count");
+      if (!canSatisfyStrictCapacity(energyCapacity, energyDemands)) return alert("Capacité énergie insuffisante.");
+      vehicle.equippedModules = [...(vehicle.equippedModules || []), moduleIndex];
+      render();
+    }
+
+    function removeModuleFromVehicle(idx, slotIdx) {
+      const vehicle = state.sections.vehicules.items[idx];
+      if (!vehicle || !Array.isArray(vehicle.equippedModules)) return;
+      vehicle.equippedModules.splice(slotIdx, 1);
       render();
     }
 
@@ -896,7 +1062,10 @@
 
         merged.sections[type] = {
           items: normalizedItems,
-          openIndex: Number.isInteger(parsed?.sections?.[type]?.openIndex) ? parsed.sections[type].openIndex : null
+          openIndex: Number.isInteger(parsed?.sections?.[type]?.openIndex) ? parsed.sections[type].openIndex : null,
+          rankFilter: String(parsed?.sections?.[type]?.rankFilter || "Tout"),
+          searchInput: String(parsed?.sections?.[type]?.searchInput || ""),
+          searchTerm: String(parsed?.sections?.[type]?.searchTerm || "")
         };
       }
       return merged;
