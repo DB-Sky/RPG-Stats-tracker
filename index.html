@@ -415,7 +415,7 @@
               ${state.compagnons.map((companion, idx) => `<option value="compagnon_${idx}" ${item.equippePar === `compagnon_${idx}` ? "selected" : ""}>Compagnon ${idx + 1} (${escapeHtml(companion.nom || "Sans nom")})</option>`).join("")}
             </select>
           ` : ""}
-          <button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button>
+          <div style="margin-top:8px"><button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button></div>
         </div>`;
 
       const items = Array.isArray(section.items) ? section.items : [];
