@@ -251,6 +251,17 @@
 
     function computeHP(entity) {
       const con = getStatProgress(entity.stats.Constitution);
+      const isUndefinedRank = con.rank === "Undefined";
+      if (isUndefinedRank) {
+        const parts = {};
+        Object.keys(HP_PARTS).forEach(part => {
+          if (entity.hpCurrent[part] == null) entity.hpCurrent[part] = 1;
+          entity.hpCurrent[part] = Math.max(1, Math.floor(Number(entity.hpCurrent[part]) || 1));
+          parts[part] = { max: null, current: entity.hpCurrent[part] };
+        });
+        return { total: null, currentTotal: 1, parts, isUndefinedRank: true };
+      }
+
       const total = Math.max(1, Math.floor(100 * con.level * (rankToValue(con.rank) ** 2)));
       const parts = {};
       let currentTotal = 0;
@@ -261,7 +272,7 @@
         currentTotal += entity.hpCurrent[part];
         parts[part] = { max, current: entity.hpCurrent[part] };
       });
-      return { total, currentTotal, parts };
+      return { total, currentTotal, parts, isUndefinedRank: false };
     }
 
     function regenPerHour(partMax, partCurrent) {
@@ -304,8 +315,8 @@
       const hpHtml = Object.entries(hp.parts).map(([part, val]) => `
         <div class="card">
           <div>${part}</div>
-          <div class="small">HP max: ${formatLarge(val.max)} (${formatRaw(val.max)})</div>
-          <input type="number" min="0" max="${val.max}" value="${val.current}"
+          <div class="small">HP max: ${val.max == null ? "?" : `${formatLarge(val.max)} (${formatRaw(val.max)})`}</div>
+          <input type="number" min="0" ${val.max == null ? "" : `max="${val.max}"`} value="${val.current}"
             oninput="${path}.hpCurrent['${part}']=Number(this.value)||0; save();" />
           <div class="small">HP actuel: ${formatLarge(val.current)} (${formatRaw(val.current)})</div>
         </div>`).join("");
@@ -333,7 +344,7 @@
           <h3>Statistiques</h3>
           <div class="grid">${statsHtml}</div>
 
-          <h3>HP (total ${formatLarge(hp.currentTotal)} / ${formatRaw(hp.total)})</h3>
+          <h3>HP (total ${hp.isUndefinedRank ? "1" : formatLarge(hp.currentTotal)} / ${hp.isUndefinedRank ? "?" : formatRaw(hp.total)})</h3>
           <div class="card">
             <label>HP temporaire (n'affecte pas les zones et ne se régénère pas)</label>
             <input type="number" step="1" value="${Number(entity.hpTemporaire) || 0}" oninput="${path}.hpTemporaire=Number(this.value)||0; save();" />
@@ -477,7 +488,7 @@
 
       const oldHp = computeHP(target);
       const oldParts = Object.fromEntries(Object.entries(oldHp.parts).map(([part, values]) => [part, { ...values }]));
-      const wasFull = Object.values(oldParts).every(values => values.current >= values.max);
+      const wasFull = !oldHp.isUndefinedRank && Object.values(oldParts).every(values => values.max != null && values.current >= values.max);
 
       if (field === "level") {
         target.stats[stat].level = Math.min(10, Math.max(1, Math.floor(Number(rawValue) || 1)));
@@ -488,12 +499,16 @@
 
       const newHp = computeHP(target);
       for (const [part, values] of Object.entries(newHp.parts)) {
+        if (values.max == null) {
+          target.hpCurrent[part] = 1;
+          continue;
+        }
         if (wasFull) {
           target.hpCurrent[part] = values.max;
           continue;
         }
         const oldValues = oldParts[part] || { current: values.max, max: values.max };
-        const ratio = oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
+        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
         target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
       }
       render();
@@ -510,6 +525,7 @@
       const hp = computeHP(target);
       for (let i = 0; i < hours; i++) {
         for (const [part, values] of Object.entries(hp.parts)) {
+          if (values.max == null) continue;
           const current = Number(target.hpCurrent[part]) || 0;
           const gain = regenPerHour(values.max, current);
           target.hpCurrent[part] = Math.min(values.max, current + gain);
