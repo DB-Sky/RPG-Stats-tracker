@@ -169,6 +169,9 @@
       item.damageTypes = Array.isArray(item.damageTypes) ? item.damageTypes.filter(v => DAMAGE_TYPES.includes(v)) : [];
       item.armorTypes = Array.isArray(item.armorTypes) ? item.armorTypes.filter(v => ARMOR_TYPES.includes(v)) : [];
       item.armorBodyPart = Object.keys(HP_PARTS).includes(item.armorBodyPart) ? item.armorBodyPart : "";
+      item.equipePar = item.equippePar;
+      if (typeof item.equippePar !== "string") item.equippePar = "none";
+      if (item.equippePar !== "none" && !/^pnj_\d+$/.test(item.equippePar)) item.equippePar = "none";
       return item;
     }
 
@@ -440,6 +443,60 @@
       render();
     }
 
+    function tryEquipItemForPNJ(idx, equipTarget, silent = false) {
+      const item = state.sections.equipements.items[idx];
+      if (!item) return;
+      const target = typeof equipTarget === "string" ? equipTarget : "none";
+      if (target === "none") {
+        item.equippePar = "none";
+        render();
+        return;
+      }
+      if (!/^pnj_\d+$/.test(target)) {
+        item.equippePar = "none";
+        render();
+        return;
+      }
+      const pnjIndex = Number(target.replace("pnj_", ""));
+      const pnj = state.source[pnjIndex];
+      if (!pnj) {
+        item.equippePar = "none";
+        render();
+        return;
+      }
+
+      const prereq = item.prerequisRanks || {};
+      const failingStat = EQUIPMENT_REQUIREMENT_STATS.find(stat => {
+        const required = prereq[stat] || "None";
+        return rankToValue(pnj.stats[stat]?.rank || "None") < rankToValue(required);
+      });
+      if (failingStat) {
+        if (!silent) alert(`Prérequis non respecté (${failingStat}).`);
+        item.equippePar = "none";
+        render();
+        return;
+      }
+
+      if (item.equipementType === "Armure" && item.armorBodyPart) {
+        const conflict = state.sections.equipements.items.some((other, otherIdx) =>
+          otherIdx !== idx &&
+          other.categorie === "Équipement" &&
+          other.equipementType === "Armure" &&
+          other.armorBodyPart === item.armorBodyPart &&
+          other.equippePar === target
+        );
+        if (conflict) {
+          if (!silent) alert(`Une armure est déjà équipée sur ${item.armorBodyPart} pour ce PNJ.`);
+          item.equippePar = "none";
+          render();
+          return;
+        }
+      }
+
+      item.equippePar = target;
+      render();
+    }
+
     function addAsset(type) {
       const key = type === 'objets' ? 'equipements' : type;
       if (!state.sections[key]) return;
@@ -568,7 +625,12 @@
                     <label>Partie du corps</label>
                     <select onchange="state.sections.equipements.items[${idx}].armorBodyPart=this.value;save();"><option value="">Aucune</option>${Object.keys(HP_PARTS).map(p=>`<option value="${p}" ${(item.armorBodyPart||'')===p?'selected':''}>${p}</option>`).join('')}</select>
                   ` : ''}
-                </div>` : ''}
+                </div>
+                <label>Équipé par (PNJ)</label>
+                <select onchange="tryEquipItemForPNJ(${idx}, this.value)">
+                  <option value="none" ${(item.equippePar||'none')==='none'?'selected':''}>Non-équipé</option>
+                  ${state.source.map((pnj, i) => `<option value="pnj_${i}" ${(item.equippePar||'none')===`pnj_${i}`?'selected':''}>PNJ ${i + 1} — ${escapeHtml(pnj.nom || 'Sans nom')}</option>`).join('')}
+                </select>` : ''}
               <button onclick="removeAsset('equipements', ${idx})">Supprimer</button>
             </div>
           `;
