@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin PNJ</title>
+  <style>
+    :root { --bg:#13151d; --panel:#1d2130; --panel2:#252a3d; --text:#f2f5ff; --muted:#aeb5ce; --border:#3a4364; }
+    body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Arial,sans-serif}
+    header{padding:10px;border-bottom:1px solid var(--border);background:#0d1018;display:flex;gap:8px;align-items:center;justify-content:space-between}
+    main{padding:12px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+    .section,.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px}
+    .card{background:#1a1f2e}
+    input,select,textarea,button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:7px 10px}
+    textarea{width:100%;min-height:70px}
+    label{display:block;margin:6px 0 4px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+    .row{display:flex;gap:8px;align-items:center}
+    .muted{color:var(--muted);font-size:.9rem}
+  </style>
+</head>
+<body>
+  <header>
+    <strong>🛠️ Admin PNJ (onglet dédié)</strong>
+    <div class="row">
+      <button onclick="addPNJ()">+ PNJ</button>
+      <button onclick="duplicateSelected()">Dupliquer PNJ vers sélection</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="section" id="pnjSource"></section>
+    <section class="section" id="pnjSelected"></section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'rpg_tracker_admin_v1';
+    const MAIN_KEY = 'rpg_tracker_v2';
+    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse"];
+    const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
+    const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
+    const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
+    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined"];
+
+    const makePNJ = () => ({
+      nom: "",
+      bio: [""],
+      notes: [""],
+      stats: Object.fromEntries(STATS.map(s => [s, { level: 1, rank: 'None' }]))
+    });
+
+    let state = { source: [makePNJ()], selected: [] };
+
+    function normalizePNJ(raw) {
+      const base = makePNJ();
+      const p = { ...base, ...(raw || {}) };
+      p.stats = { ...base.stats, ...(raw?.stats || {}) };
+      for (const stat of STATS) {
+        const level = Math.min(10, Math.max(1, Math.floor(Number(p.stats[stat]?.level) || 1)));
+        const rank = RANKS.includes(p.stats[stat]?.rank) ? p.stats[stat].rank : 'None';
+        p.stats[stat] = { level, rank };
+      }
+      p.bio = Array.isArray(p.bio) && p.bio.length ? p.bio : [""];
+      p.notes = Array.isArray(p.notes) && p.notes.length ? p.notes : [""];
+      return p;
+    }
+
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+    function load() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        state.source = Array.isArray(parsed?.source) ? parsed.source.map(normalizePNJ) : [makePNJ()];
+        state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizePNJ) : [];
+        return;
+      }
+      const mainRaw = localStorage.getItem(MAIN_KEY);
+      if (mainRaw) {
+        const parsedMain = JSON.parse(mainRaw);
+        if (Array.isArray(parsedMain?.pnjs) && parsedMain.pnjs.length) {
+          state.source = parsedMain.pnjs.map(normalizePNJ);
+        }
+      }
+    }
+
+    function renderPNJCard(p, path, idx, removableAction) {
+      const stats = STATS.map(stat => `
+        <div class="card">
+          <strong>${stat}</strong>
+          <label>Niveau</label>
+          <select onchange="${path}.stats['${stat}'].level=Number(this.value); save();">
+            ${Array.from({length:10},(_,i)=>i+1).map(l=>`<option value="${l}" ${p.stats[stat].level===l?'selected':''}>${l}</option>`).join('')}
+          </select>
+          <label>Rank</label>
+          <select onchange="${path}.stats['${stat}'].rank=this.value; ${path}.stats['${stat}'].level=1; save();">
+            ${RANKS.map(r=>`<option value="${r}" ${p.stats[stat].rank===r?'selected':''}>${r}</option>`).join('')}
+          </select>
+        </div>
+      `).join('');
+
+      return `
+        <div class="card">
+          <label>Nom</label>
+          <input value="${escapeHtml(p.nom)}" oninput="${path}.nom=this.value; save();" />
+          <label>Bio</label>
+          <textarea oninput="${path}.bio[0]=this.value; save();">${escapeHtml(p.bio[0] || '')}</textarea>
+          <label>Notes</label>
+          <textarea oninput="${path}.notes[0]=this.value; save();">${escapeHtml(p.notes[0] || '')}</textarea>
+          <div class="grid">${stats}</div>
+          ${removableAction ? `<button onclick="${removableAction}">Supprimer</button>` : ''}
+        </div>
+      `;
+    }
+
+    function render() {
+      const source = document.getElementById('pnjSource');
+      const selected = document.getElementById('pnjSelected');
+
+      source.innerHTML = `
+        <h2>📚 Liste des PNJ</h2>
+        <div class="muted">Cette liste sert de base pour dupliquer des PNJ.</div>
+        ${state.source.map((p, i) => renderPNJCard(p, `state.source[${i}]`, i, `removePNJ(${i})`)).join('')}
+      `;
+
+      selected.innerHTML = `
+        <h2>🧬 PNJ sélectionnés (dupliqués)</h2>
+        <div class="row">
+          <select id="sourcePick">${state.source.map((p,i)=>`<option value="${i}">${escapeHtml(p.nom || `PNJ ${i+1}`)}</option>`).join('')}</select>
+          <button onclick="duplicateSelected()">Dupliquer</button>
+        </div>
+        ${state.selected.map((p, i) => renderPNJCard(p, `state.selected[${i}]`, i, `removeSelected(${i})`)).join('') || '<div class="muted">Aucun PNJ dupliqué.</div>'}
+      `;
+      save();
+    }
+
+    function addPNJ() { state.source.push(makePNJ()); render(); }
+    function removePNJ(i) { state.source.splice(i,1); if(!state.source.length) state.source.push(makePNJ()); render(); }
+    function removeSelected(i) { state.selected.splice(i,1); render(); }
+    function duplicateSelected() {
+      const pick = Number(document.getElementById('sourcePick')?.value || 0);
+      const src = state.source[pick];
+      if (!src) return;
+      state.selected.push(normalizePNJ(JSON.parse(JSON.stringify(src))));
+      render();
+    }
+
+    function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+    load();
+    render();
+  </script>
+</body>
+</html>
