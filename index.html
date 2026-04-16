@@ -204,7 +204,11 @@
       weaponTypes: [],
       damageTypes: [],
       armorTypes: [],
-      armorBodyPart: ""
+      armorBodyPart: "",
+      moduleUseRank: "None",
+      moduleSlotRank: "None",
+      moduleEnergyRank: "None",
+      moduleType: "utilitaire"
     });
     function normalizeItemName(type, rawName, index) {
       const fallback = String(index + 1);
@@ -496,6 +500,21 @@
                     </div>
                   `).join("")}
                 </div>
+              </div>
+            ` : ""}
+            ${item.categorie === "Module" ? `
+              <div class="card">
+                <h4>Prérequis module</h4>
+                <label>Rank d'utilisation</label>
+                <select onchange="${onPath}.moduleUseRank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${(item.moduleUseRank || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+                <label>Emplacement d'utilisation</label>
+                <select onchange="${onPath}.moduleSlotRank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${(item.moduleSlotRank || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+                <label>Énergie requise</label>
+                <select onchange="${onPath}.moduleEnergyRank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${(item.moduleEnergyRank || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+                <label>Type de module</label>
+                <select onchange="${onPath}.moduleType=this.value; save();">
+                  ${["arme","protection","utilitaire"].map(t => `<option value="${t}" ${(item.moduleType || "utilitaire") === t ? "selected" : ""}>${t}</option>`).join("")}
+                </select>
               </div>
             ` : ""}
           ` : ""}
@@ -834,7 +853,11 @@
               weaponTypes: Array.isArray(x?.weaponTypes) ? x.weaponTypes.filter(v => WEAPON_TYPES.includes(v)) : [],
               damageTypes: Array.isArray(x?.damageTypes) ? x.damageTypes.filter(v => DAMAGE_TYPES.includes(v)) : [],
               armorTypes: Array.isArray(x?.armorTypes) ? x.armorTypes.filter(v => ARMOR_TYPES.includes(v)) : [],
-              armorBodyPart: Object.keys(HP_PARTS).includes(x?.armorBodyPart) ? x.armorBodyPart : ""
+              armorBodyPart: Object.keys(HP_PARTS).includes(x?.armorBodyPart) ? x.armorBodyPart : "",
+              moduleUseRank: RANKS.includes(x?.moduleUseRank) ? x.moduleUseRank : "None",
+              moduleSlotRank: RANKS.includes(x?.moduleSlotRank) ? x.moduleSlotRank : "None",
+              moduleEnergyRank: RANKS.includes(x?.moduleEnergyRank) ? x.moduleEnergyRank : "None",
+              moduleType: ["arme","protection","utilitaire"].includes(x?.moduleType) ? x.moduleType : "utilitaire"
             }))
           : [];
 
