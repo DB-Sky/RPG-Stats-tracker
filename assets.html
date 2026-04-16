@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gestion Assets</title>
+<style>
+:root{--bg:#13151d;--panel:#1d2130;--panel2:#252a3d;--text:#f2f5ff;--muted:#aeb5ce;--border:#3a4364;--accent:#71a3ff}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Arial,sans-serif}
+header{padding:10px;border-bottom:1px solid var(--border);background:#0d1018;display:flex;gap:8px;flex-wrap:wrap}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;padding:12px}
+.section,.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px}
+.card{background:#1a1f2e}
+input,select,textarea,button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:7px 10px}
+button{cursor:pointer} button:hover{border-color:var(--accent)}
+textarea{width:100%;min-height:70px}
+label{display:block;margin:6px 0 4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.check-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px}
+.check-chip{display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:6px;background:var(--panel2)}
+</style>
+</head>
+<body>
+<header>
+  <strong>🗂️ Gestion globale Assets (Objets / Véhicules / Structures)</strong>
+  <button onclick="addItem('equipements')">+ Objet</button>
+  <button onclick="addItem('vehicules')">+ Véhicule</button>
+  <button onclick="addItem('batiments')">+ Structure</button>
+</header>
+<main>
+  <section class="section" id="equipements"></section>
+  <section class="section" id="vehicules"></section>
+  <section class="section" id="batiments"></section>
+</main>
+<script>
+const MAIN_KEY='rpg_tracker_v2';
+const ITEM_CATEGORIES=["Équipement","Objets de valeurs","Module"];
+const ITEM_FILTERS=[...ITEM_CATEGORIES,'Tout'];
+const EQUIPMENT_REQUIREMENT_STATS=["Force","Constitution","Intelligence","Sagesse"];
+const EQUIPMENT_TYPES=["Arme","Armure","Autre"];
+const WEAPON_TYPES=["énergétique","balistique et/ou explosif","matérielles","magique"];
+const DAMAGE_TYPES=["Tranchants","Perforations","Contusions"];
+const ARMOR_TYPES=["énergétique","matérielles","magique"];
+const HP_PARTS={ Tête:0.10, Torse:0.20, "Bras gauche":0.12, "Bras droit":0.12, "Main gauche":0.05, "Main droite":0.05, "Jambe gauche":0.13, "Jambe droite":0.13, "Pied gauche":0.05, "Pied droit":0.05 };
+const BASE_RANKS=["None","g","F","E","D","C","B","A","R","S","SR","SS","SSR","SSS","H","HR","M","MR","G","GR","U","UR"];
+const EX_RANKS=["g","F","E","D","C","B","A","R","S","SR","SS","SSR","SSS","H","HR","M","MR","G","GR","U","UR"].map(r=>`${r} EX`);
+const ASTRA_RANKS=["g","F","E","D","C","B","A","R","S","SR","SS","SSR","SSS","H","HR","M","MR","G","GR","U","UR"].map(r=>`${r} Astra`);
+const RANKS=[...BASE_RANKS,...EX_RANKS,...ASTRA_RANKS,'Undefined'];
+const defaultItem=(n=1)=>({nom:String(n),description:'',categorie:ITEM_CATEGORIES[0],level:1,rank:'None',equippePar:'none',prerequisRanks:Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(s=>[s,'None'])),equipementType:'Autre',weaponTypes:[],damageTypes:[],armorTypes:[],armorBodyPart:''});
+const defaultBuilding=(n=1)=>({nom:String(n),description:''});
+let root={personnage:{},compagnons:[],sections:{equipements:{items:[],monnaies:{pointEchange:0,pieceEnergie:0,monnaieLocale:0},filtreCategorie:'Tout',searchInput:'',searchTerm:''},vehicules:{items:[]},batiments:{items:[]}}};
+function load(){const raw=localStorage.getItem(MAIN_KEY);if(raw){try{root=JSON.parse(raw);}catch{}};root.sections=root.sections||{};root.sections.equipements=root.sections.equipements||{items:[],monnaies:{pointEchange:0,pieceEnergie:0,monnaieLocale:0},filtreCategorie:'Tout',searchInput:'',searchTerm:''};root.sections.vehicules=root.sections.vehicules||{items:[]};root.sections.batiments=root.sections.batiments||{items:[]};}
+function save(){localStorage.setItem(MAIN_KEY,JSON.stringify(root));}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
+function addItem(type){const items=root.sections[type].items||[]; if(type==='batiments') items.push(defaultBuilding(items.length+1)); else items.push(defaultItem(items.length+1)); root.sections[type].items=items; render();}
+function removeItem(type,idx){if(!confirm('Supprimer ?'))return;root.sections[type].items.splice(idx,1);render();}
+function toggleChoice(type,idx,field,val,ch){const item=root.sections[type].items[idx];const set=new Set(item[field]||[]); if(ch)set.add(val); else set.delete(val); item[field]=Array.from(set); render();}
+function renderEquip(){const s=root.sections.equipements; const items=s.items||[]; const filtered=items.filter(it=>(s.filtreCategorie==='Tout'||it.categorie===s.filtreCategorie)&&(!s.searchTerm||String(it.nom||'').toLowerCase().includes(s.searchTerm.toLowerCase())));
+  document.getElementById('equipements').innerHTML=`<h2>🧰 Objets</h2>
+  <div class='card'><label>Point d'échange</label><input type='number' value='${s.monnaies.pointEchange||0}' oninput='root.sections.equipements.monnaies.pointEchange=Number(this.value)||0;save()'/><label>Pièce d'énergie</label><input type='number' value='${s.monnaies.pieceEnergie||0}' oninput='root.sections.equipements.monnaies.pieceEnergie=Number(this.value)||0;save()'/><label>Monnaie locale</label><input type='number' value='${s.monnaies.monnaieLocale||0}' oninput='root.sections.equipements.monnaies.monnaieLocale=Number(this.value)||0;save()'/></div>
+  <div class='card'><label>Filtre catégorie</label><select onchange='root.sections.equipements.filtreCategorie=this.value;render()'>${ITEM_FILTERS.map(c=>`<option value='${c}' ${s.filtreCategorie===c?'selected':''}>${c}</option>`).join('')}</select><label>Recherche nom</label><div class='grid'><input value='${esc(s.searchInput||'')}' oninput='root.sections.equipements.searchInput=this.value;save()'/><button onclick='root.sections.equipements.searchTerm=root.sections.equipements.searchInput||"";render()'>Rechercher</button></div></div>
+  ${filtered.map(item=>{const idx=items.indexOf(item);return `<div class='card'><label>Nom</label><input value='${esc(item.nom)}' oninput='root.sections.equipements.items[${idx}].nom=this.value;save()'/><label>Catégorie</label><select onchange='root.sections.equipements.items[${idx}].categorie=this.value;render()'>${ITEM_CATEGORIES.map(c=>`<option value='${c}' ${item.categorie===c?'selected':''}>${c}</option>`).join('')}</select><div class='grid'><div><label>Niveau</label><select onchange='root.sections.equipements.items[${idx}].level=Number(this.value);save()'>${Array.from({length:10},(_,i)=>i+1).map(l=>`<option value='${l}' ${Number(item.level||1)===l?'selected':''}>${l}</option>`).join('')}</select></div><div><label>Rank</label><select onchange='root.sections.equipements.items[${idx}].rank=this.value;save()'>${RANKS.map(r=>`<option value='${r}' ${item.rank===r?'selected':''}>${r}</option>`).join('')}</select></div></div>
+  ${item.categorie==='Équipement'?`<div class='card'><h4>Prérequis</h4><div class='grid'>${EQUIPMENT_REQUIREMENT_STATS.map(st=>`<div><label>${st}</label><select onchange="root.sections.equipements.items[${idx}].prerequisRanks['${st}']=this.value;save()">${RANKS.map(r=>`<option value='${r}' ${(item.prerequisRanks?.[st]||'None')===r?'selected':''}>${r}</option>`).join('')}</select></div>`).join('')}</div></div>`:''}
+  <label>Description</label><textarea oninput='root.sections.equipements.items[${idx}].description=this.value;save()'>${esc(item.description)}</textarea>
+  ${item.categorie==='Équipement'?`<div class='card'><label>Type d'équipement</label><select onchange='root.sections.equipements.items[${idx}].equipementType=this.value;render()'>${EQUIPMENT_TYPES.map(t=>`<option value='${t}' ${(item.equipementType||'Autre')===t?'selected':''}>${t}</option>`).join('')}</select>
+  ${(item.equipementType||'Autre')==='Arme'?`<label>Type d'arme</label><div class='check-grid'>${WEAPON_TYPES.map(o=>`<label class='check-chip'><input type='checkbox' ${(item.weaponTypes||[]).includes(o)?'checked':''} onchange="toggleChoice('equipements',${idx},'weaponTypes','${o}',this.checked)">${o}</label>`).join('')}</div><label>Dégâts</label><div class='check-grid'>${DAMAGE_TYPES.map(o=>`<label class='check-chip'><input type='checkbox' ${(item.damageTypes||[]).includes(o)?'checked':''} onchange="toggleChoice('equipements',${idx},'damageTypes','${o}',this.checked)">${o}</label>`).join('')}</div>`:''}
+  ${(item.equipementType||'Autre')==='Armure'?`<label>Type d'armure</label><div class='check-grid'>${ARMOR_TYPES.map(o=>`<label class='check-chip'><input type='checkbox' ${(item.armorTypes||[]).includes(o)?'checked':''} onchange="toggleChoice('equipements',${idx},'armorTypes','${o}',this.checked)">${o}</label>`).join('')}</div><label>Partie du corps</label><select onchange='root.sections.equipements.items[${idx}].armorBodyPart=this.value;save()'><option value=''>Aucune</option>${Object.keys(HP_PARTS).map(p=>`<option value='${p}' ${(item.armorBodyPart||'')===p?'selected':''}>${p}</option>`).join('')}</select>`:''}
+  </div><label>Équipé par</label><select onchange='root.sections.equipements.items[${idx}].equippePar=this.value;save()'><option value='none' ${(item.equippePar||'none')==='none'?'selected':''}>Non-équipé</option><option value='personnage' ${item.equippePar==='personnage'?'selected':''}>Personnage</option>${(root.compagnons||[]).map((c,i)=>`<option value='compagnon_${i}' ${item.equippePar===`compagnon_${i}`?'selected':''}>Compagnon ${i+1}</option>`).join('')}</select>`:''}
+  <div style='margin-top:8px'><button onclick='removeItem("equipements",${idx})'>Supprimer</button></div></div>`}).join('') || "<div class='muted'>Aucun objet.</div>"}`;
+}
+function renderSimple(type,title,icon){const items=root.sections[type].items||[];document.getElementById(type).innerHTML=`<h2>${icon} ${title}</h2>${items.map((it,idx)=>`<div class='card'><label>Nom</label><input value='${esc(it.nom)}' oninput='root.sections.${type}.items[${idx}].nom=this.value;save()'/><label>Description</label><textarea oninput='root.sections.${type}.items[${idx}].description=this.value;save()'>${esc(it.description)}</textarea><div style='margin-top:8px'><button onclick='removeItem("${type}",${idx})'>Supprimer</button></div></div>`).join('') || "<div class='muted'>Aucun élément.</div>"}`;}
+function render(){renderEquip();renderSimple('vehicules','Véhicules','🚗');renderSimple('batiments','Structures','🏢');save();}
+load();render();
+</script>
+</body>
+</html>
