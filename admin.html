@@ -632,7 +632,9 @@
                   <option value="none" ${(item.equippePar||'none')==='none'?'selected':''}>Non-équipé</option>
                   ${state.source.map((pnj, i) => `<option value="pnj_${i}" ${(item.equippePar||'none')===`pnj_${i}`?'selected':''}>PNJ ${i + 1} — ${escapeHtml(pnj.nom || 'Sans nom')}</option>`).join('')}
                 </select>` : ''}
-              <button onclick="removeAsset('equipements', ${idx})">Supprimer</button>
+              <div style="margin-top:10px">
+                <button onclick="removeAsset('equipements', ${idx})">Supprimer</button>
+              </div>
             </div>
           `;
         }).join('') || '<div class="muted">Aucun objet.</div>'}
@@ -650,7 +652,9 @@
             <input value="${escapeHtml(asset.nom)}" oninput="state.sections['${type}'].items[${i}].nom=this.value; save();" />
             <label>Description</label>
             <textarea oninput="state.sections['${type}'].items[${i}].description=this.value; save();">${escapeHtml(asset.description || '')}</textarea>
-            <button onclick="removeAsset('${type}', ${i})">Supprimer</button>
+            <div style="margin-top:10px">
+              <button onclick="removeAsset('${type}', ${i})">Supprimer</button>
+            </div>
           </div>
         `).join('') || '<div class="muted">Aucun élément.</div>'}
       `;
