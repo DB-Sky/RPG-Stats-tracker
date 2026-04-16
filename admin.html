@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin PNJ</title>
+  <style>
+    :root { --bg:#13151d; --panel:#1d2130; --panel2:#252a3d; --text:#f2f5ff; --muted:#aeb5ce; --border:#3a4364; --accent:#71a3ff; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Arial,sans-serif}
+    header{padding:10px;border-bottom:1px solid var(--border);background:#0d1018;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    main{padding:12px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+    .section,.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px}
+    .card{background:#1a1f2e}
+    input,select,textarea,button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:7px 10px}
+    button{cursor:pointer}
+    button:hover{border-color:var(--accent)}
+    textarea{width:100%;min-height:70px}
+    label{display:block;margin:6px 0 4px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .row > *{flex:1}
+    .muted{color:var(--muted);font-size:.9rem}
+    .list-item{width:100%;text-align:left;margin-bottom:6px}
+    .placeholder{min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+    .mini-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-top:6px}
+    @media (min-width: 1200px){
+      main{grid-template-columns:1fr 1fr}
+      .right-panel{grid-column:2}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>🛠️ Admin PNJ (onglet dédié)</strong>
+    <div class="row" style="flex:0 0 auto">
+      <button onclick="addPNJ()">+ PNJ</button>
+      <button onclick="openAssetsTab()">🗂️ Assets</button>
+      <button onclick="resetAdminData()">🗑️ Reset</button>
+      <button onclick="exportAdminJson()">💾 Export JSON</button>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">📂 Import JSON
+        <input id="adminImportInput" type="file" accept="application/json" style="display:none" onchange="importAdminJson(event)" />
+      </label>
+      <button onclick="saveToDataFolder()">📁 Sauver dans data PNJ</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="section" id="pnjSource"></section>
+    <section class="section right-panel" id="pnjSelected"></section>
+    <section class="section"><h2>🧰 Objets</h2><div class="placeholder">Section admin objets (base prête, détails à développer)</div></section>
+    <section class="section"><h2>🚗 Véhicules</h2><div class="placeholder">Section admin véhicules (base prête, détails à développer)</div></section>
+    <section class="section"><h2>🏢 Bâtiments</h2><div class="placeholder">Section bâtiments (à développer plus tard)</div></section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'rpg_tracker_admin_v2';
+    const MAIN_KEY = 'rpg_tracker_v2';
+    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse"];
+    const HP_PARTS = { Tête: 0.10, Torse: 0.20, "Bras gauche": 0.12, "Bras droit": 0.12, "Main gauche": 0.05, "Main droite": 0.05, "Jambe gauche": 0.13, "Jambe droite": 0.13, "Pied gauche": 0.05, "Pied droit": 0.05 };
+    const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
+    const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
+    const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
+    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined"];
+
+    const makePNJ = () => ({
+      nom: "",
+      bio: [""],
+      stats: Object.fromEntries(STATS.map(s => [s, { level: 1, rank: 'None' }])),
+      hpCurrent: {},
+      hpTemporaire: 0
+    });
+
+    let state = {
+      source: [makePNJ()],
+      selected: [],
+      ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
+      openSourceIndex: null,
+      openActiveIndices: []
+    };
+
+    const rankToValue = (rankLabel) => {
+      const idx = RANKS.indexOf(rankLabel);
+      return idx >= 0 ? idx + 1 : RANKS.length;
+    };
+
+    function computeHP(pnj) {
+      const con = pnj.stats.Constitution || { level: 1, rank: 'None' };
+      if (con.rank === 'Undefined') {
+        const parts = {};
+        Object.keys(HP_PARTS).forEach(part => {
+          if (pnj.hpCurrent[part] == null) pnj.hpCurrent[part] = 1;
+          pnj.hpCurrent[part] = Math.max(1, Math.floor(Number(pnj.hpCurrent[part]) || 1));
+          parts[part] = { max: null, current: pnj.hpCurrent[part] };
+        });
+        return { total: null, currentTotal: 1, parts, undefinedRank: true };
+      }
+      const total = Math.max(1, Math.floor(100 * con.level * (rankToValue(con.rank) ** 2)));
+      let currentTotal = 0;
+      const parts = {};
+      Object.entries(HP_PARTS).forEach(([part, ratio]) => {
+        const max = Math.max(1, Math.floor(total * ratio));
+        if (pnj.hpCurrent[part] == null) pnj.hpCurrent[part] = max;
+        pnj.hpCurrent[part] = Math.max(0, Math.min(Number(pnj.hpCurrent[part]) || 0, max));
+        currentTotal += pnj.hpCurrent[part];
+        parts[part] = { max, current: pnj.hpCurrent[part] };
+      });
+      return { total, currentTotal, parts, undefinedRank: false };
+    }
+
+    function globalRank(pnj) {
+      const avg = Math.floor(STATS.reduce((acc, s) => acc + rankToValue(pnj.stats[s].rank), 0) / STATS.length);
+      return RANKS[Math.max(0, Math.min(RANKS.length - 1, avg - 1))];
+    }
+
+    function regenPerHour(partMax, partCurrent) {
+      const hpTotal = Math.max(1, Number(partMax) || 1);
+      const hpActuel = Math.max(0, Number(partCurrent) || 0);
+      return Math.max(1, Math.floor(((hpActuel * hpActuel) / hpTotal) * (hpActuel / hpTotal)));
+    }
+
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+    function openAssetsTab() {
+      window.open('assets.html', '_blank', 'noopener,noreferrer');
+    }
+
+    function snapshotState() {
+      return {
+        source: state.source,
+        selected: state.selected,
+        ui: state.ui,
+        openSourceIndex: state.openSourceIndex,
+        openActiveIndices: state.openActiveIndices
+      };
+    }
+
+    function normalizePNJ(raw) {
+      const base = makePNJ();
+      const p = { ...base, ...(raw || {}) };
+      p.stats = { ...base.stats, ...(raw?.stats || {}) };
+      for (const stat of STATS) {
+        const level = Math.min(10, Math.max(1, Math.floor(Number(p.stats[stat]?.level) || 1)));
+        const rank = RANKS.includes(p.stats[stat]?.rank) ? p.stats[stat].rank : 'None';
+        p.stats[stat] = { level, rank };
+      }
+      p.bio = Array.isArray(p.bio) && p.bio.length ? p.bio : [''];
+      p.hpCurrent = { ...(raw?.hpCurrent || {}) };
+      p.hpTemporaire = Number(raw?.hpTemporaire) || 0;
+      return p;
+    }
+
+    function load() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
+        state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizePNJ) : [];
+        state.ui = { ...state.ui, ...(parsed?.ui || {}) };
+        state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
+        state.openActiveIndices = Array.isArray(parsed?.openActiveIndices) ? parsed.openActiveIndices.filter(Number.isInteger) : [];
+        return;
+      }
+      const mainRaw = localStorage.getItem(MAIN_KEY);
+      if (mainRaw) {
+        const main = JSON.parse(mainRaw);
+        if (Array.isArray(main?.pnjs) && main.pnjs.length) state.source = main.pnjs.map(normalizePNJ);
+      }
+    }
+
+    function resetAdminData() {
+      if (!confirm('Réinitialiser toutes les données admin PNJ ?')) return;
+      state = {
+        source: [makePNJ()],
+        selected: [],
+        ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
+        openSourceIndex: null,
+        openActiveIndices: []
+      };
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    }
+
+    function exportAdminJson() {
+      const blob = new Blob([JSON.stringify(snapshotState(), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'admin-pnj-data.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function importAdminJson(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
+          state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizePNJ) : [];
+          state.ui = { rankFilter: 'Tout', searchInput: '', searchTerm: '', ...(parsed?.ui || {}) };
+          state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
+          state.openActiveIndices = Array.isArray(parsed?.openActiveIndices) ? parsed.openActiveIndices.filter(Number.isInteger) : [];
+          render();
+        } catch {
+          alert('Fichier JSON invalide.');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+
+    async function saveToDataFolder() {
+      if (!window.showDirectoryPicker) {
+        alert("Le navigateur ne permet pas l'écriture directe de dossier. Utilise Export JSON puis enregistre le fichier dans 'data PNJ'.");
+        return;
+      }
+      try {
+        const root = await window.showDirectoryPicker();
+        const dataDir = await root.getDirectoryHandle('data PNJ', { create: true });
+        const fileHandle = await dataDir.getFileHandle('admin-pnj-data.json', { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(snapshotState(), null, 2));
+        await writable.close();
+        alert("Données enregistrées dans le dossier 'data PNJ' (fichier admin-pnj-data.json).");
+      } catch (err) {
+        if (err?.name !== 'AbortError') alert('Échec de la sauvegarde dossier.');
+      }
+    }
+
+    function ensureAccess() {
+      const pwd = prompt('Mot de passe admin :');
+      if (pwd !== '123') {
+        document.body.innerHTML = '<div style="padding:30px;color:white">Accès refusé.</div>';
+        throw new Error('Accès refusé');
+      }
+    }
+
+    function getPool(pool) { return pool === 'selected' ? state.selected : state.source; }
+
+    function toggleSourceEditor(index) {
+      state.openSourceIndex = state.openSourceIndex === index ? null : index;
+      render();
+    }
+
+    function toggleActiveEditor(index) {
+      const set = new Set(state.openActiveIndices);
+      if (set.has(index)) set.delete(index);
+      else set.add(index);
+      state.openActiveIndices = Array.from(set).sort((a, b) => a - b);
+      render();
+    }
+
+    function openAllActiveEditors() {
+      state.openActiveIndices = state.selected.map((_, i) => i);
+      render();
+    }
+
+    function closeAllActiveEditors() {
+      state.openActiveIndices = [];
+      render();
+    }
+
+    function updatePNJStat(pool, idx, stat, field, value) {
+      const pnj = getPool(pool)[idx];
+      if (!pnj) return;
+      if (field === 'level') pnj.stats[stat].level = Math.min(10, Math.max(1, Number(value) || 1));
+      if (field === 'rank') { pnj.stats[stat].rank = value; pnj.stats[stat].level = 1; }
+      render();
+    }
+
+    function applyRest(pool, idx, hours) {
+      const pnj = getPool(pool)[idx];
+      if (!pnj) return;
+      const hp = computeHP(pnj);
+      const h = Math.max(0, Math.floor(Number(hours) || 0));
+      for (let i = 0; i < h; i++) {
+        for (const [part, values] of Object.entries(hp.parts)) {
+          if (values.max == null) continue;
+          const current = Number(pnj.hpCurrent[part]) || 0;
+          pnj.hpCurrent[part] = Math.min(values.max, current + regenPerHour(values.max, current));
+        }
+      }
+      render();
+    }
+
+    function addPNJ(){ state.source.push(makePNJ()); state.openSourceIndex = state.source.length - 1; render(); }
+    function removePNJ(i){
+      state.source.splice(i,1);
+      if(!state.source.length) state.source.push(makePNJ());
+      if (state.openSourceIndex === i) state.openSourceIndex = null;
+      if (state.openSourceIndex != null && state.openSourceIndex > i) state.openSourceIndex -= 1;
+      render();
+    }
+    function removeSelected(i){
+      state.selected.splice(i,1);
+      state.openActiveIndices = state.openActiveIndices.filter(x => x !== i).map(x => x > i ? x - 1 : x);
+      render();
+    }
+
+    function applySearch(){ state.ui.searchTerm = state.ui.searchInput || ''; render(); }
+
+    function duplicateToSelected() {
+      const idx = Number(document.getElementById('sourcePick')?.value || 0);
+      const src = state.source[idx];
+      if (!src) return;
+      state.selected.push(normalizePNJ(JSON.parse(JSON.stringify(src))));
+      state.openActiveIndices = Array.from(new Set([...state.openActiveIndices, state.selected.length - 1]));
+      render();
+    }
+
+    function renderPNJEditor(pool, idx) {
+      const p = getPool(pool)[idx];
+      if (!p) return '<div class="muted">Sélectionne un PNJ.</div>';
+      const hp = computeHP(p);
+      const stats = STATS.map(stat => `
+        <div class="card">
+          <strong>${stat}</strong>
+          <label>Niveau</label>
+          <select onchange="updatePNJStat('${pool}', ${idx}, '${stat}', 'level', this.value)">${Array.from({length:10},(_,i)=>i+1).map(level=>`<option value="${level}" ${p.stats[stat].level===level?'selected':''}>${level}</option>`).join('')}</select>
+          <label>Rank</label>
+          <select onchange="updatePNJStat('${pool}', ${idx}, '${stat}', 'rank', this.value)">${RANKS.map(r=>`<option value="${r}" ${p.stats[stat].rank===r?'selected':''}>${r}</option>`).join('')}</select>
+        </div>`).join('');
+
+      const hpParts = Object.entries(hp.parts).map(([part, values]) => `
+        <div class="card">
+          <strong>${part}</strong>
+          <div class="muted">HP max: ${values.max == null ? '?' : values.max}</div>
+          <input type="number" value="${values.current}" ${values.max == null ? '' : `max="${values.max}"`} min="0" oninput="getPool('${pool}')[${idx}].hpCurrent['${part}']=Number(this.value)||0; save();" />
+        </div>
+      `).join('');
+
+      return `
+        <div class="card">
+          <label>Nom</label>
+          <input value="${escapeHtml(p.nom)}" oninput="getPool('${pool}')[${idx}].nom=this.value; save();" />
+          <label>Bio</label>
+          <textarea oninput="getPool('${pool}')[${idx}].bio[0]=this.value; save();">${escapeHtml(p.bio[0] || '')}</textarea>
+          <div class="grid">${stats}</div>
+          <h4>HP (total ${hp.undefinedRank ? '1' : hp.currentTotal} / ${hp.undefinedRank ? '?' : hp.total})</h4>
+          <label>HP temporaire</label>
+          <input type="number" value="${p.hpTemporaire}" oninput="getPool('${pool}')[${idx}].hpTemporaire=Number(this.value)||0; save();" />
+          <div class="row">
+            <input id="rest_${pool}_${idx}" type="number" min="0" step="1" value="1" />
+            <button onclick="applyRest('${pool}', ${idx}, document.getElementById('rest_${pool}_${idx}').value)">Récupérer HP (repos)</button>
+          </div>
+          <div class="grid">${hpParts}</div>
+        </div>
+      `;
+    }
+
+    function render() {
+      const filtered = state.source.filter(p => {
+        const rankOk = state.ui.rankFilter === 'Tout' || globalRank(p) === state.ui.rankFilter;
+        const nameOk = !state.ui.searchTerm || String(p.nom || '').toLowerCase().includes(String(state.ui.searchTerm).toLowerCase());
+        return rankOk && nameOk;
+      });
+
+      document.getElementById('pnjSource').innerHTML = `
+        <h2>📚 Liste des PNJ</h2>
+        <div class="row">
+          <select onchange="state.ui.rankFilter=this.value; render();"><option ${state.ui.rankFilter==='Tout'?'selected':''}>Tout</option>${RANKS.map(r=>`<option value="${r}" ${state.ui.rankFilter===r?'selected':''}>${r}</option>`).join('')}</select>
+          <input value="${escapeHtml(state.ui.searchInput || '')}" placeholder="Recherche par nom" oninput="state.ui.searchInput=this.value; save();" />
+          <button onclick="applySearch()">Rechercher</button>
+        </div>
+        <div class="muted">Clique un PNJ pour ouvrir/fermer son éditeur. Un seul éditeur source reste ouvert.</div>
+        ${filtered.map((p) => {
+          const idx = state.source.indexOf(p);
+          return `
+            <button class="list-item" onclick="toggleSourceEditor(${idx})">${escapeHtml(p.nom || 'PNJ sans nom')} — Rank global: ${globalRank(p)}</button>
+            ${state.openSourceIndex === idx ? `
+              ${renderPNJEditor('source', idx)}
+              <button onclick="removePNJ(${idx})">Supprimer ce PNJ</button>
+            ` : ''}
+          `;
+        }).join('') || '<div class="muted">Aucun PNJ trouvé.</div>'}
+      `;
+
+      document.getElementById('pnjSelected').innerHTML = `
+        <h2>🧬 PNJ actif</h2>
+        <div class="row">
+          <select id="sourcePick">${state.source.map((p, i) => `<option value="${i}">${escapeHtml(p.nom || `PNJ ${i+1}`)}</option>`).join('')}</select>
+          <button onclick="duplicateToSelected()">Dupliquer depuis la liste</button>
+        </div>
+        <div class="row">
+          <button onclick="openAllActiveEditors()">Tout ouvrir</button>
+          <button onclick="closeAllActiveEditors()">Tout fermer</button>
+        </div>
+        ${state.selected.map((p, i) => `
+          <div class="card">
+            <button class="list-item" onclick="toggleActiveEditor(${i})">${escapeHtml(p.nom || 'PNJ actif')} — Rank global: ${globalRank(p)}</button>
+            <div class="mini-stats">${STATS.map(stat => `<div class="muted">${stat}: Lv ${p.stats[stat].level} / ${p.stats[stat].rank}</div>`).join('')}</div>
+            ${state.openActiveIndices.includes(i) ? `
+              ${renderPNJEditor('selected', i)}
+              <button onclick="removeSelected(${i})">Supprimer ce PNJ actif</button>
+            ` : ''}
+          </div>
+        `).join('') || '<div class="muted">Aucun PNJ actif.</div>'}
+      `;
+
+      save();
+    }
+
+    function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+    ensureAccess();
+    load();
+    render();
+  </script>
+</body>
+</html>
