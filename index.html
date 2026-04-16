@@ -134,8 +134,25 @@
     const ITEM_CATEGORIES = ["Équipement", "Objets de valeurs", "Module"];
     const ITEM_FILTERS = [...ITEM_CATEGORIES, "Tout"];
     const EQUIPMENT_REQUIREMENT_STATS = ["Force", "Constitution", "Intelligence", "Sagesse"];
+    const EQUIPMENT_TYPES = ["Arme", "Armure", "Autre"];
+    const WEAPON_TYPES = ["énergétique", "balistique et/ou explosif", "matérielles", "magique"];
+    const DAMAGE_TYPES = ["Tranchants", "Perforations", "Contusions"];
+    const ARMOR_TYPES = ["énergétique", "matérielles", "magique"];
 
-    const defaultItem = (number = 1) => ({ nom: String(number), description: "", notes: "", categorie: ITEM_CATEGORIES[0], rank: "None", equippePar: "none", prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, "None"])) });
+    const defaultItem = (number = 1) => ({
+      nom: String(number),
+      description: "",
+      categorie: ITEM_CATEGORIES[0],
+      level: 1,
+      rank: "None",
+      equippePar: "none",
+      prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, "None"])),
+      equipementType: "Autre",
+      weaponTypes: [],
+      damageTypes: [],
+      armorTypes: [],
+      armorBodyPart: ""
+    });
     function normalizeItemName(type, rawName, index) {
       const fallback = String(index + 1);
       if (rawName == null || String(rawName).trim() === "") return fallback;
@@ -391,6 +408,8 @@
           ${type === "equipements" ? `
             <label>Catégorie</label>
             <select onchange="${onPath}.categorie=this.value; save(); render();">${ITEM_CATEGORIES.map(cat => `<option value="${cat}" ${item.categorie === cat ? "selected" : ""}>${cat}</option>`).join("")}</select>
+            <label>Niveau</label>
+            <select onchange="${onPath}.level=Math.min(10, Math.max(1, Number(this.value)||1)); save();">${Array.from({ length: 10 }, (_, i) => i + 1).map(level => `<option value="${level}" ${Number(item.level || 1) === level ? "selected" : ""}>${level}</option>`).join("")}</select>
             <label>Rank</label>
             <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${item.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
             ${item.categorie === "Équipement" ? `
@@ -405,11 +424,39 @@
           ` : ""}
           <label>Description</label>
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
-          <label>Notes</label>
-          <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
+          ${type === "equipements" && item.categorie === "Équipement" ? `
+            <div class="card">
+              <h4>Détails d'équipement</h4>
+              <label>Type d'équipement</label>
+              <select onchange="${onPath}.equipementType=this.value; if(this.value!=='Arme'){${onPath}.weaponTypes=[]; ${onPath}.damageTypes=[];} if(this.value!=='Armure'){${onPath}.armorTypes=[]; ${onPath}.armorBodyPart='';} save(); render();">${EQUIPMENT_TYPES.map(option => `<option value="${option}" ${(item.equipementType || "Autre") === option ? "selected" : ""}>${option}</option>`).join("")}</select>
+
+              ${(item.equipementType || "Autre") === "Arme" ? `
+                <label>Type d'arme (choix multiples)</label>
+                <select multiple size="4" onchange="${onPath}.weaponTypes=Array.from(this.selectedOptions).map(o=>o.value); save();">
+                  ${WEAPON_TYPES.map(option => `<option value="${option}" ${(item.weaponTypes || []).includes(option) ? "selected" : ""}>${option}</option>`).join("")}
+                </select>
+                <label>Type de dégâts (choix multiples)</label>
+                <select multiple size="3" onchange="${onPath}.damageTypes=Array.from(this.selectedOptions).map(o=>o.value); save();">
+                  ${DAMAGE_TYPES.map(option => `<option value="${option}" ${(item.damageTypes || []).includes(option) ? "selected" : ""}>${option}</option>`).join("")}
+                </select>
+              ` : ""}
+
+              ${(item.equipementType || "Autre") === "Armure" ? `
+                <label>Type d'armure (choix multiples)</label>
+                <select multiple size="3" onchange="${onPath}.armorTypes=Array.from(this.selectedOptions).map(o=>o.value); save();">
+                  ${ARMOR_TYPES.map(option => `<option value="${option}" ${(item.armorTypes || []).includes(option) ? "selected" : ""}>${option}</option>`).join("")}
+                </select>
+                <label>Partie du corps à équiper</label>
+                <select onchange="${onPath}.armorBodyPart=this.value; if(${onPath}.equippePar!=='none'){ tryEquipItem('equipements', ${idx}, ${onPath}.equippePar, true); } save(); render();">
+                  <option value="" ${(item.armorBodyPart || "") === "" ? "selected" : ""}>Aucune</option>
+                  ${Object.keys(HP_PARTS).map(part => `<option value="${part}" ${(item.armorBodyPart || "") === part ? "selected" : ""}>${part}</option>`).join("")}
+                </select>
+              ` : ""}
+            </div>
+          ` : ""}
           ${type === "equipements" && item.categorie === "Équipement" ? `
             <label>Équipé par</label>
-            <select onchange="${onPath}.equippePar=this.value; save();">
+            <select onchange="tryEquipItem('equipements', ${idx}, this.value)">
               <option value="none" ${item.equippePar === "none" || item.equippePar == null ? "selected" : ""}>Non-équipé</option>
               <option value="personnage" ${item.equippePar === "personnage" ? "selected" : ""}>Personnage (${escapeHtml(state.personnage.nom || "Sans nom")})</option>
               ${state.compagnons.map((companion, idx) => `<option value="compagnon_${idx}" ${item.equippePar === `compagnon_${idx}` ? "selected" : ""}>Compagnon ${idx + 1} (${escapeHtml(companion.nom || "Sans nom")})</option>`).join("")}
@@ -423,7 +470,7 @@
         ? items.filter(item => {
             const categoryOk = section.filtreCategorie === "Tout" || item.categorie === section.filtreCategorie;
             const term = (section.searchTerm || "").trim().toLowerCase();
-            const searchOk = !term || [item.nom, item.description, item.notes, item.categorie, item.rank].some(v => String(v || "").toLowerCase().includes(term));
+            const searchOk = !term || [item.nom, item.description, item.categorie, item.rank, item.equipementType, ...(item.weaponTypes || []), ...(item.damageTypes || []), ...(item.armorTypes || []), item.armorBodyPart].some(v => String(v || "").toLowerCase().includes(term));
             return categoryOk && searchOk;
           })
         : items;
@@ -478,6 +525,36 @@
       if (key === "personnage") return state.personnage;
       if (key.startsWith("compagnon_")) return state.compagnons[Number(key.replace("compagnon_", ""))];
       return null;
+    }
+
+    function tryEquipItem(type, idx, equipTarget, silent = false) {
+      const item = state.sections?.[type]?.items?.[idx];
+      if (!item) return;
+      const target = equipTarget || "none";
+      if (target === "none") {
+        item.equippePar = "none";
+        if (!silent) render();
+        return;
+      }
+      if (item.equipementType === "Armure" && item.armorBodyPart) {
+        const owner = getEntityByKey(target);
+        const currentPartHp = Number(owner?.hpCurrent?.[item.armorBodyPart]) || 0;
+        if (currentPartHp <= 0) {
+          alert(`Impossible d'équiper cette armure: ${item.armorBodyPart} est à 0 HP.`);
+          item.equippePar = "none";
+          render();
+          return;
+        }
+        if (wasFull) {
+          target.hpCurrent[part] = values.max;
+          continue;
+        }
+        const oldValues = oldParts[part] || { current: values.max, max: values.max };
+        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
+        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
+      }
+      item.equippePar = target;
+      if (!silent) render();
     }
 
     function updateStatProgress(key, stat, field, rawValue) {
@@ -637,9 +714,15 @@
               ...x,
               nom: normalizeItemName(type, x?.nom, i),
               categorie: ITEM_CATEGORIES.includes(x?.categorie) ? x.categorie : ITEM_CATEGORIES[0],
+              level: Math.min(10, Math.max(1, Math.floor(Number(x?.level) || 1))),
               rank: RANKS.includes(x?.rank) ? x.rank : "None",
               equippePar: typeof x?.equippePar === "string" ? x.equippePar : (typeof x?.equipePar === "string" ? x.equipePar : "none"),
-              prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, RANKS.includes(x?.prerequisRanks?.[stat]) ? x.prerequisRanks[stat] : "None"]))
+              prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, RANKS.includes(x?.prerequisRanks?.[stat]) ? x.prerequisRanks[stat] : "None"])),
+              equipementType: EQUIPMENT_TYPES.includes(x?.equipementType) ? x.equipementType : "Autre",
+              weaponTypes: Array.isArray(x?.weaponTypes) ? x.weaponTypes.filter(v => WEAPON_TYPES.includes(v)) : [],
+              damageTypes: Array.isArray(x?.damageTypes) ? x.damageTypes.filter(v => DAMAGE_TYPES.includes(v)) : [],
+              armorTypes: Array.isArray(x?.armorTypes) ? x.armorTypes.filter(v => ARMOR_TYPES.includes(v)) : [],
+              armorBodyPart: Object.keys(HP_PARTS).includes(x?.armorBodyPart) ? x.armorBodyPart : ""
             }))
           : [defaultItem(1)];
 
