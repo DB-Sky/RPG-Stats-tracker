@@ -400,12 +400,6 @@
                   <label>${stat} requis</label>
                   <select onchange="${onPath}.prerequisRanks['${stat}']=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${(item.prerequisRanks?.[stat] || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
                 `).join("")}
-                <label>Équipé par</label>
-                <select onchange="${onPath}.equippePar=this.value; save();">
-                  <option value="none" ${item.equippePar === "none" || item.equippePar == null ? "selected" : ""}>Non-équipé</option>
-                  <option value="personnage" ${item.equippePar === "personnage" ? "selected" : ""}>Personnage (${escapeHtml(state.personnage.nom || "Sans nom")})</option>
-                  ${state.compagnons.map((companion, idx) => `<option value="compagnon_${idx}" ${item.equippePar === `compagnon_${idx}` ? "selected" : ""}>Compagnon ${idx + 1} (${escapeHtml(companion.nom || "Sans nom")})</option>`).join("")}
-                </select>
               </div>
             ` : ""}
           ` : ""}
@@ -413,9 +407,13 @@
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
           <label>Notes</label>
           <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
-          ${type === "equipements" ? `
-            <label>Rank</label>
-            <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${item.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+          ${type === "equipements" && item.categorie === "Équipement" ? `
+            <label>Équipé par</label>
+            <select onchange="${onPath}.equippePar=this.value; save();">
+              <option value="none" ${item.equippePar === "none" || item.equippePar == null ? "selected" : ""}>Non-équipé</option>
+              <option value="personnage" ${item.equippePar === "personnage" ? "selected" : ""}>Personnage (${escapeHtml(state.personnage.nom || "Sans nom")})</option>
+              ${state.compagnons.map((companion, idx) => `<option value="compagnon_${idx}" ${item.equippePar === `compagnon_${idx}` ? "selected" : ""}>Compagnon ${idx + 1} (${escapeHtml(companion.nom || "Sans nom")})</option>`).join("")}
+            </select>
           ` : ""}
           <button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button>
         </div>`;
