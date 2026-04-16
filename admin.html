@@ -36,7 +36,6 @@
     <strong>🛠️ Admin PNJ (onglet dédié)</strong>
     <div class="row" style="flex:0 0 auto">
       <button onclick="addPNJ()">+ PNJ</button>
-      <button onclick="addCompanion()">+ Compagnon</button>
       <button onclick="addAsset('objets')">+ Objet</button>
       <button onclick="addAsset('vehicules')">+ Véhicule</button>
       <button onclick="addAsset('batiments')">+ Bâtiment</button>
@@ -58,7 +57,6 @@
   <main>
     <section class="section" id="pnjSource"></section>
     <section class="section right-panel" id="pnjSelected"></section>
-    <section class="section" id="compagnonsAdmin"></section>
     <section class="section" id="objetsAdmin"></section>
     <section class="section" id="vehiculesAdmin"></section>
     <section class="section" id="batimentsAdmin"></section>
@@ -112,12 +110,10 @@
 
     let state = {
       source: [makePNJ()],
-      companions: [],
       selected: [],
       sections: defaultSections(),
       ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
       openSourceIndex: null,
-      openCompanionIndex: null,
       openAssetEditors: { equipements: null, vehicules: null, batiments: null },
       openActiveIndices: []
     };
@@ -205,7 +201,6 @@
         const mainRaw = localStorage.getItem(MAIN_KEY);
         const mainState = mainRaw ? JSON.parse(mainRaw) : {};
         mainState.pnjs = state.source.map(p => normalizePNJ(p));
-        mainState.compagnons = state.companions.map(c => normalizePNJ(c));
         mainState.sections = { ...(mainState.sections || {}), ...state.sections };
         localStorage.setItem(MAIN_KEY, JSON.stringify(mainState));
       } catch {}
@@ -223,12 +218,10 @@
     function snapshotState() {
       return {
         source: state.source,
-        companions: state.companions,
         selected: state.selected,
         sections: state.sections,
         ui: state.ui,
         openSourceIndex: state.openSourceIndex,
-        openCompanionIndex: state.openCompanionIndex,
         openAssetEditors: state.openAssetEditors,
         openActiveIndices: state.openActiveIndices
       };
@@ -273,12 +266,10 @@
         if (raw) {
           const parsed = JSON.parse(raw);
           state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
-          state.companions = Array.isArray(parsed?.companions) ? parsed.companions.map(normalizePNJ) : [];
           state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizeActiveEntity) : [];
           state.sections = normalizeSections(parsed?.sections);
           state.ui = { ...state.ui, ...(parsed?.ui || {}) };
           state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
-          state.openCompanionIndex = Number.isInteger(parsed?.openCompanionIndex) ? parsed.openCompanionIndex : null;
           state.openAssetEditors = {
             equipements: Number.isInteger(parsed?.openAssetEditors?.equipements) ? parsed.openAssetEditors.equipements : null,
             vehicules: Number.isInteger(parsed?.openAssetEditors?.vehicules) ? parsed.openAssetEditors.vehicules : null,
@@ -293,7 +284,6 @@
         if (mainRaw) {
           const main = JSON.parse(mainRaw);
           if (Array.isArray(main?.pnjs) && main.pnjs.length) state.source = main.pnjs.map(normalizePNJ);
-          state.companions = Array.isArray(main?.compagnons) ? main.compagnons.map(normalizePNJ) : [];
           state.sections = normalizeSections(main?.sections);
         }
       } catch {}
@@ -303,12 +293,10 @@
       if (!confirm('Réinitialiser toutes les données admin PNJ ?')) return;
       state = {
         source: [makePNJ()],
-        companions: [],
         selected: [],
         sections: defaultSections(),
         ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
         openSourceIndex: null,
-        openCompanionIndex: null,
         openAssetEditors: { equipements: null, vehicules: null, batiments: null },
         openActiveIndices: []
       };
@@ -333,12 +321,10 @@
         try {
           const parsed = JSON.parse(reader.result);
           state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
-          state.companions = Array.isArray(parsed?.companions) ? parsed.companions.map(normalizePNJ) : [];
           state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizeActiveEntity) : [];
           state.sections = normalizeSections(parsed?.sections);
           state.ui = { rankFilter: 'Tout', searchInput: '', searchTerm: '', ...(parsed?.ui || {}) };
           state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
-          state.openCompanionIndex = Number.isInteger(parsed?.openCompanionIndex) ? parsed.openCompanionIndex : null;
           state.openAssetEditors = {
             equipements: Number.isInteger(parsed?.openAssetEditors?.equipements) ? parsed.openAssetEditors.equipements : null,
             vehicules: Number.isInteger(parsed?.openAssetEditors?.vehicules) ? parsed.openAssetEditors.vehicules : null,
@@ -382,7 +368,6 @@
 
     function getPNJ(pool, idx) {
       if (pool === 'source') return state.source[idx] || null;
-      if (pool === 'companion') return state.companions[idx] || null;
       const entity = state.selected[idx];
       if (!entity) return null;
       if (entity.kind === 'pnj') return entity.data;
@@ -391,11 +376,6 @@
 
     function toggleSourceEditor(index) {
       state.openSourceIndex = state.openSourceIndex === index ? null : index;
-      render();
-    }
-
-    function toggleCompanionEditor(index) {
-      state.openCompanionIndex = state.openCompanionIndex === index ? null : index;
       render();
     }
 
@@ -446,18 +426,11 @@
     }
 
     function addPNJ(){ state.source.push(makePNJ()); state.openSourceIndex = state.source.length - 1; render(); }
-    function addCompanion(){ state.companions.push(makePNJ()); state.openCompanionIndex = state.companions.length - 1; render(); }
     function removePNJ(i){
       state.source.splice(i,1);
       if(!state.source.length) state.source.push(makePNJ());
       if (state.openSourceIndex === i) state.openSourceIndex = null;
       if (state.openSourceIndex != null && state.openSourceIndex > i) state.openSourceIndex -= 1;
-      render();
-    }
-    function removeCompanion(i){
-      state.companions.splice(i,1);
-      if (state.openCompanionIndex === i) state.openCompanionIndex = null;
-      if (state.openCompanionIndex != null && state.openCompanionIndex > i) state.openCompanionIndex -= 1;
       render();
     }
     function removeSelected(i){
@@ -691,20 +664,6 @@
       `;
     }
 
-    function renderCompanionsSection() {
-      return `
-        <h2>🧑‍🤝‍🧑 Compagnons</h2>
-        <div class="muted">Clique un compagnon pour ouvrir/fermer son éditeur.</div>
-        ${state.companions.map((c, i) => `
-          <button class="list-item" onclick="toggleCompanionEditor(${i})">${escapeHtml(c.nom || `Compagnon ${i + 1}`)} — Rank global: ${globalRank(c)}</button>
-          ${state.openCompanionIndex === i ? `
-            ${renderPNJEditor('companion', i)}
-            <button onclick="removeCompanion(${i})">Supprimer ce compagnon</button>
-          ` : ''}
-        `).join('') || '<div class="muted">Aucun compagnon.</div>'}
-      `;
-    }
-
     function render() {
       const filtered = state.source.filter(p => {
         const rankOk = state.ui.rankFilter === 'Tout' || globalRank(p) === state.ui.rankFilter;
@@ -760,7 +719,6 @@
         `).join('') || '<div class="muted">Aucun PNJ actif.</div>'}
       `;
 
-      document.getElementById('compagnonsAdmin').innerHTML = renderCompanionsSection();
       document.getElementById('objetsAdmin').innerHTML = renderEquipementsSection();
       document.getElementById('vehiculesAdmin').innerHTML = renderSimpleAssetSection('vehicules', 'Véhicules', '🚗');
       document.getElementById('batimentsAdmin').innerHTML = renderSimpleAssetSection('batiments', 'Bâtiments', '🏢');
