@@ -23,6 +23,11 @@
     .muted{color:var(--muted);font-size:.9rem}
     .list-item{width:100%;text-align:left;margin-bottom:6px}
     .placeholder{min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+    .mini-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-top:6px}
+    @media (min-width: 1200px){
+      main{grid-template-columns:1fr 1fr}
+      .right-panel{grid-column:2}
+    }
   </style>
 </head>
 <body>
@@ -36,7 +41,7 @@
 
   <main>
     <section class="section" id="pnjSource"></section>
-    <section class="section" id="pnjSelected"></section>
+    <section class="section right-panel" id="pnjSelected"></section>
     <section class="section"><h2>🧰 Objets</h2><div class="placeholder">Section admin objets (base prête, détails à développer)</div></section>
     <section class="section"><h2>🚗 Véhicules</h2><div class="placeholder">Section admin véhicules (base prête, détails à développer)</div></section>
     <section class="section"><h2>🏢 Bâtiments</h2><div class="placeholder">Section bâtiments (à développer plus tard)</div></section>
@@ -64,7 +69,8 @@
       source: [makePNJ()],
       selected: [],
       ui: { rankFilter: 'Tout', searchInput: '', searchTerm: '' },
-      active: { pool: 'source', index: 0 }
+      openSourceIndex: null,
+      openActiveIndices: []
     };
 
     const rankToValue = (rankLabel) => {
@@ -131,7 +137,8 @@
         state.source = Array.isArray(parsed?.source) && parsed.source.length ? parsed.source.map(normalizePNJ) : [makePNJ()];
         state.selected = Array.isArray(parsed?.selected) ? parsed.selected.map(normalizePNJ) : [];
         state.ui = { ...state.ui, ...(parsed?.ui || {}) };
-        state.active = { ...state.active, ...(parsed?.active || {}) };
+        state.openSourceIndex = Number.isInteger(parsed?.openSourceIndex) ? parsed.openSourceIndex : null;
+        state.openActiveIndices = Array.isArray(parsed?.openActiveIndices) ? parsed.openActiveIndices.filter(Number.isInteger) : [];
         return;
       }
       const mainRaw = localStorage.getItem(MAIN_KEY);
@@ -151,8 +158,26 @@
 
     function getPool(pool) { return pool === 'selected' ? state.selected : state.source; }
 
-    function setActive(pool, index) {
-      state.active = { pool, index };
+    function toggleSourceEditor(index) {
+      state.openSourceIndex = state.openSourceIndex === index ? null : index;
+      render();
+    }
+
+    function toggleActiveEditor(index) {
+      const set = new Set(state.openActiveIndices);
+      if (set.has(index)) set.delete(index);
+      else set.add(index);
+      state.openActiveIndices = Array.from(set).sort((a, b) => a - b);
+      render();
+    }
+
+    function openAllActiveEditors() {
+      state.openActiveIndices = state.selected.map((_, i) => i);
+      render();
+    }
+
+    function closeAllActiveEditors() {
+      state.openActiveIndices = [];
       render();
     }
 
@@ -179,9 +204,19 @@
       render();
     }
 
-    function addPNJ(){ state.source.push(makePNJ()); state.active = { pool: 'source', index: state.source.length - 1 }; render(); }
-    function removePNJ(i){ state.source.splice(i,1); if(!state.source.length) state.source.push(makePNJ()); state.active = { pool: 'source', index: 0 }; render(); }
-    function removeSelected(i){ state.selected.splice(i,1); if(state.active.pool==='selected') state.active={pool:'source',index:0}; render(); }
+    function addPNJ(){ state.source.push(makePNJ()); state.openSourceIndex = state.source.length - 1; render(); }
+    function removePNJ(i){
+      state.source.splice(i,1);
+      if(!state.source.length) state.source.push(makePNJ());
+      if (state.openSourceIndex === i) state.openSourceIndex = null;
+      if (state.openSourceIndex != null && state.openSourceIndex > i) state.openSourceIndex -= 1;
+      render();
+    }
+    function removeSelected(i){
+      state.selected.splice(i,1);
+      state.openActiveIndices = state.openActiveIndices.filter(x => x !== i).map(x => x > i ? x - 1 : x);
+      render();
+    }
 
     function applySearch(){ state.ui.searchTerm = state.ui.searchInput || ''; render(); }
 
@@ -190,7 +225,7 @@
       const src = state.source[idx];
       if (!src) return;
       state.selected.push(normalizePNJ(JSON.parse(JSON.stringify(src))));
-      state.active = { pool: 'selected', index: state.selected.length - 1 };
+      state.openActiveIndices = Array.from(new Set([...state.openActiveIndices, state.selected.length - 1]));
       render();
     }
 
@@ -248,21 +283,39 @@
           <input value="${escapeHtml(state.ui.searchInput || '')}" placeholder="Recherche par nom" oninput="state.ui.searchInput=this.value; save();" />
           <button onclick="applySearch()">Rechercher</button>
         </div>
-        <div class="muted">Clique un PNJ pour ouvrir son éditeur. Un seul éditeur reste ouvert à la fois.</div>
-        ${filtered.map((p, i) => `<button class="list-item" onclick="setActive('source', ${state.source.indexOf(p)})">${escapeHtml(p.nom || 'PNJ sans nom')} — Rank global: ${globalRank(p)}</button>`).join('') || '<div class="muted">Aucun PNJ trouvé.</div>'}
-        ${state.active.pool === 'source' ? renderPNJEditor('source', state.active.index) : '<div class="muted">Aucun PNJ source sélectionné.</div>'}
-        <button onclick="removePNJ(${state.active.pool==='source'?state.active.index:0})">Supprimer le PNJ actif</button>
+        <div class="muted">Clique un PNJ pour ouvrir/fermer son éditeur. Un seul éditeur source reste ouvert.</div>
+        ${filtered.map((p) => {
+          const idx = state.source.indexOf(p);
+          return `
+            <button class="list-item" onclick="toggleSourceEditor(${idx})">${escapeHtml(p.nom || 'PNJ sans nom')} — Rank global: ${globalRank(p)}</button>
+            ${state.openSourceIndex === idx ? `
+              ${renderPNJEditor('source', idx)}
+              <button onclick="removePNJ(${idx})">Supprimer ce PNJ</button>
+            ` : ''}
+          `;
+        }).join('') || '<div class="muted">Aucun PNJ trouvé.</div>'}
       `;
 
       document.getElementById('pnjSelected').innerHTML = `
-        <h2>🧬 PNJ sélectionnés (dupliqués)</h2>
+        <h2>🧬 PNJ actif</h2>
         <div class="row">
           <select id="sourcePick">${state.source.map((p, i) => `<option value="${i}">${escapeHtml(p.nom || `PNJ ${i+1}`)}</option>`).join('')}</select>
           <button onclick="duplicateToSelected()">Dupliquer depuis la liste</button>
         </div>
-        ${state.selected.map((p, i) => `<button class="list-item" onclick="setActive('selected', ${i})">${escapeHtml(p.nom || 'PNJ dupliqué')} — Rank global: ${globalRank(p)}</button>`).join('') || '<div class="muted">Aucun PNJ dupliqué.</div>'}
-        ${state.active.pool === 'selected' ? renderPNJEditor('selected', state.active.index) : '<div class="muted">Aucun PNJ dupliqué sélectionné.</div>'}
-        ${state.active.pool === 'selected' ? `<button onclick="removeSelected(${state.active.index})">Supprimer le PNJ dupliqué actif</button>` : ''}
+        <div class="row">
+          <button onclick="openAllActiveEditors()">Tout ouvrir</button>
+          <button onclick="closeAllActiveEditors()">Tout fermer</button>
+        </div>
+        ${state.selected.map((p, i) => `
+          <div class="card">
+            <button class="list-item" onclick="toggleActiveEditor(${i})">${escapeHtml(p.nom || 'PNJ actif')} — Rank global: ${globalRank(p)}</button>
+            <div class="mini-stats">${STATS.map(stat => `<div class="muted">${stat}: Lv ${p.stats[stat].level} / ${p.stats[stat].rank}</div>`).join('')}</div>
+            ${state.openActiveIndices.includes(i) ? `
+              ${renderPNJEditor('selected', i)}
+              <button onclick="removeSelected(${i})">Supprimer ce PNJ actif</button>
+            ` : ''}
+          </div>
+        `).join('') || '<div class="muted">Aucun PNJ actif.</div>'}
       `;
 
       save();
