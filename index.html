@@ -82,6 +82,7 @@
     .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .line > * { flex: 1; }
     .line .fit { flex: 0 0 auto; }
+    .list-item { width: 100%; text-align: left; margin-bottom: 6px; }
     textarea { min-height: 70px; width: 100%; }
     .body-grid {
       display: grid;
@@ -252,9 +253,10 @@
           },
           filtreCategorie: "Tout",
           searchInput: "",
-          searchTerm: ""
+          searchTerm: "",
+          openIndex: null
         },
-        vehicules: { items: [] }
+        vehicules: { items: [], openIndex: null }
       }
     });
 
@@ -587,7 +589,10 @@
         : items;
       const itemsHtml = filteredItems.map((item) => {
         const realIdx = items.indexOf(item);
-        return renderItem(item, `state.sections.${type}.items[${realIdx}]`, realIdx);
+        return `
+          <button class="list-item" onclick="toggleEntityEditor('${type}', ${realIdx})">${escapeHtml(item.nom || `${title} ${realIdx + 1}`)}</button>
+          ${section.openIndex === realIdx ? renderItem(item, `state.sections.${type}.items[${realIdx}]`, realIdx) : ""}
+        `;
       }).join("");
 
       const equipementsTools = type === "equipements" ? `
@@ -737,9 +742,17 @@
       render();
     }
 
+    function toggleEntityEditor(type, idx) {
+      const section = state.sections[type];
+      if (!section) return;
+      section.openIndex = section.openIndex === idx ? null : idx;
+      render();
+    }
+
     function addExtra(type) {
       const nextNumber = state.sections[type].items.length + 1;
       state.sections[type].items.push(defaultItem(nextNumber));
+      state.sections[type].openIndex = state.sections[type].items.length - 1;
       if (type === "vehicules") {
         document.getElementById("vehicules")?.classList.remove("hidden");
       }
@@ -754,6 +767,8 @@
     function removeExtra(type, idx) {
       if (!confirm("Supprimer cet élément ?")) return;
       state.sections[type].items.splice(idx, 1);
+      if (state.sections[type].openIndex === idx) state.sections[type].openIndex = null;
+      if (Number.isInteger(state.sections[type].openIndex) && state.sections[type].openIndex > idx) state.sections[type].openIndex -= 1;
       render();
     }
 
@@ -873,13 +888,15 @@
               ? parsed.sections.equipements.filtreCategorie
               : "Tout",
             searchInput: String(parsed?.sections?.equipements?.searchInput || ""),
-            searchTerm: String(parsed?.sections?.equipements?.searchTerm || "")
+            searchTerm: String(parsed?.sections?.equipements?.searchTerm || ""),
+            openIndex: Number.isInteger(parsed?.sections?.equipements?.openIndex) ? parsed.sections.equipements.openIndex : null
           };
           continue;
         }
 
         merged.sections[type] = {
-          items: normalizedItems
+          items: normalizedItems,
+          openIndex: Number.isInteger(parsed?.sections?.[type]?.openIndex) ? parsed.sections[type].openIndex : null
         };
       }
       return merged;
@@ -918,9 +935,15 @@
 
     function render() {
       document.getElementById("personnage")?.classList.remove("hidden");
-      document.getElementById("pnj")?.classList.add("hidden");
+      if (state.pnjs?.length) document.getElementById("pnj")?.classList.remove("hidden");
+      else document.getElementById("pnj")?.classList.add("hidden");
+      if (state.compagnons?.length) document.getElementById("compagnons")?.classList.remove("hidden");
+      else document.getElementById("compagnons")?.classList.add("hidden");
+      if (state.sections.vehicules.items?.length) document.getElementById("vehicules")?.classList.remove("hidden");
+      else document.getElementById("vehicules")?.classList.add("hidden");
       renderPersonnage();
       renderCompagnons();
+      renderPNJ();
       renderEntitySection("equipements", "Objets", "🧰");
       renderEntitySection("vehicules", "Véhicule", "🚗");
       save();
