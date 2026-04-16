@@ -22,10 +22,10 @@ label{display:block;margin:6px 0 4px}
 </head>
 <body>
 <header>
-  <strong>🗂️ Gestion globale Assets (Objets / Véhicules / Bâtiments)</strong>
+  <strong>🗂️ Gestion globale Assets (Objets / Véhicules / Structures)</strong>
   <button onclick="addItem('equipements')">+ Objet</button>
   <button onclick="addItem('vehicules')">+ Véhicule</button>
-  <button onclick="addItem('batiments')">+ Bâtiment</button>
+  <button onclick="addItem('batiments')">+ Structure</button>
 </header>
 <main>
   <section class="section" id="equipements"></section>
@@ -69,7 +69,7 @@ function renderEquip(){const s=root.sections.equipements; const items=s.items||[
   <div style='margin-top:8px'><button onclick='removeItem("equipements",${idx})'>Supprimer</button></div></div>`}).join('') || "<div class='muted'>Aucun objet.</div>"}`;
 }
 function renderSimple(type,title,icon){const items=root.sections[type].items||[];document.getElementById(type).innerHTML=`<h2>${icon} ${title}</h2>${items.map((it,idx)=>`<div class='card'><label>Nom</label><input value='${esc(it.nom)}' oninput='root.sections.${type}.items[${idx}].nom=this.value;save()'/><label>Description</label><textarea oninput='root.sections.${type}.items[${idx}].description=this.value;save()'>${esc(it.description)}</textarea><div style='margin-top:8px'><button onclick='removeItem("${type}",${idx})'>Supprimer</button></div></div>`).join('') || "<div class='muted'>Aucun élément.</div>"}`;}
-function render(){renderEquip();renderSimple('vehicules','Véhicules','🚗');renderSimple('batiments','Bâtiments','🏢');save();}
+function render(){renderEquip();renderSimple('vehicules','Véhicules','🚗');renderSimple('batiments','Structures','🏢');save();}
 load();render();
 </script>
 </body>

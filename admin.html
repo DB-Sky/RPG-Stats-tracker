@@ -38,7 +38,7 @@
       <button onclick="addPNJ()">+ PNJ</button>
       <button onclick="addAsset('objets')">+ Objet</button>
       <button onclick="addAsset('vehicules')">+ Véhicule</button>
-      <button onclick="addAsset('batiments')">+ Bâtiment</button>
+      <button onclick="addAsset('batiments')">+ Structure</button>
       <button onclick="toggleDicePanel()">🎲 Lancer de dés (bientôt)</button>
       <button onclick="resetAdminData()">🗑️ Reset</button>
       <button onclick="exportAdminJson()">💾 Export JSON</button>
@@ -721,7 +721,7 @@
 
       document.getElementById('objetsAdmin').innerHTML = renderEquipementsSection();
       document.getElementById('vehiculesAdmin').innerHTML = renderSimpleAssetSection('vehicules', 'Véhicules', '🚗');
-      document.getElementById('batimentsAdmin').innerHTML = renderSimpleAssetSection('batiments', 'Bâtiments', '🏢');
+      document.getElementById('batimentsAdmin').innerHTML = renderSimpleAssetSection('batiments', 'Structures', '🏢');
 
       save();
     }
