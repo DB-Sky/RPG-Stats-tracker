@@ -863,7 +863,27 @@
     }
 
     function save() {
+      enforceUniqueNames();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function enforceUniqueNames() {
+      const groups = [
+        { items: state.compagnons, label: "Compagnon" },
+        { items: state.pnjs, label: "PNJ" },
+        { items: state.sections.equipements.items, label: "Objet" },
+        { items: state.sections.vehicules.items, label: "Véhicule" }
+      ];
+      groups.forEach(group => {
+        const seen = new Map();
+        (group.items || []).forEach((item, idx) => {
+          const raw = String(item?.nom || "").trim() || `${group.label} ${idx + 1}`;
+          const key = raw.toLowerCase();
+          const count = (seen.get(key) || 0) + 1;
+          seen.set(key, count);
+          item.nom = count === 1 ? raw : `${raw} (${count})`;
+        });
+      });
     }
 
     function load() {
