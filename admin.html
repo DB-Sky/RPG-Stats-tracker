@@ -610,6 +610,7 @@
               <label>Description</label>
               <textarea oninput="state.sections.equipements.items[${idx}].description=this.value;save();">${escapeHtml(item.description)}</textarea>
               ${item.categorie==='Équipement' ? `
+                <h4>Détails d'équipement</h4>
                 <div class="card">
                   <label>Type d'équipement</label>
                   <select onchange="state.sections.equipements.items[${idx}].equipementType=this.value;if(this.value!=='Arme'){state.sections.equipements.items[${idx}].weaponTypes=[];state.sections.equipements.items[${idx}].damageTypes=[];}if(this.value!=='Armure'){state.sections.equipements.items[${idx}].armorTypes=[];state.sections.equipements.items[${idx}].armorBodyPart='';}save();render();">${EQUIPMENT_TYPES.map(t=>`<option value="${t}" ${(item.equipementType||'Autre')===t?'selected':''}>${t}</option>`).join('')}</select>
@@ -626,7 +627,7 @@
                     <select onchange="state.sections.equipements.items[${idx}].armorBodyPart=this.value;save();"><option value="">Aucune</option>${Object.keys(HP_PARTS).map(p=>`<option value="${p}" ${(item.armorBodyPart||'')===p?'selected':''}>${p}</option>`).join('')}</select>
                   ` : ''}
                 </div>
-                <label>Équipé par (PNJ)</label>
+                <label>Équipé par</label>
                 <select onchange="tryEquipItemForPNJ(${idx}, this.value)">
                   <option value="none" ${(item.equippePar||'none')==='none'?'selected':''}>Non-équipé</option>
                   ${state.source.map((pnj, i) => `<option value="pnj_${i}" ${(item.equippePar||'none')===`pnj_${i}`?'selected':''}>PNJ ${i + 1} — ${escapeHtml(pnj.nom || 'Sans nom')}</option>`).join('')}
