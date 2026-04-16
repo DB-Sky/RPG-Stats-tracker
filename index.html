@@ -89,17 +89,23 @@
       gap: 6px;
     }
     .small { color: var(--muted); font-size: .86rem; }
+    label { display:block; margin: 6px 0 4px; }
+    .values-stack {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
   <header>
     <button onclick="toggleSection('personnage')">🧙 Personnage</button>
     <button onclick="toggleSection('compagnons')">🧑‍🤝‍🧑 Compagnons</button>
-    <button onclick="toggleSection('equipements')">🧰 Équipement</button>
+    <button onclick="toggleSection('equipements')">🧰 Objets</button>
     <button onclick="toggleSection('vehicules')">🚗 Véhicule</button>
     <button title="Réservé au futur système de dés">🎲 Lancer de dés (bientôt)</button>
     <button onclick="addCompanion()">+ Compagnon</button>
-    <button onclick="addExtra('equipements')">+ Équipement</button>
+    <button onclick="addExtra('equipements')">+ Objet</button>
     <button onclick="addExtra('vehicules')">+ Véhicule</button>
     <button onclick="exportJson()">💾 Export .json</button>
     <button class="danger" onclick="resetAll()">🗑️ Reset principal</button>
@@ -110,35 +116,36 @@
 
   <main class="workspace">
     <section id="personnage" class="section"></section>
-    <section id="compagnons" class="section"></section>
+    <section id="compagnons" class="section hidden"></section>
     <section id="equipements" class="section"></section>
     <section id="vehicules" class="section"></section>
   </main>
 
   <script>
     const STORAGE_KEY = "rpg_tracker_v2";
-    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse", "Charisme"];
-    const MULTIPLIERS = [2, 2, 3, 2, 3, 2, 2, 2, 3];
-    const XP_UNITS = [
-      { key: "", label: "Rien (10^0)", value: 1n },
-      { key: "K", label: "Kilo (10^3)", value: 1000n },
-      { key: "M", label: "Méga (10^6)", value: 1000000n },
-      { key: "G", label: "Giga (10^9)", value: 1000000000n },
-      { key: "T", label: "Téra (10^12)", value: 1000000000000n },
-      { key: "P", label: "Péta (10^15)", value: 1000000000000000n },
-      { key: "E", label: "Exa (10^18)", value: 1000000000000000000n },
-      { key: "Z", label: "Zetta (10^21)", value: 1000000000000000000000n },
-      { key: "Y", label: "Yotta (10^24)", value: 1000000000000000000000000n }
-    ];
+    const STATS = ["Force", "Constitution", "Vitesse", "Intelligence", "Sagesse"];
     const BASE_RANKS = ["None", "g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"];
     const EX_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} EX`);
     const ASTRA_RANKS = ["g", "F", "E", "D", "C", "B", "A", "R", "S", "SR", "SS", "SSR", "SSS", "H", "HR", "M", "MR", "G", "GR", "U", "UR"].map(r => `${r} Astra`);
-    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined / Non déterminé"];
+    const RANKS = [...BASE_RANKS, ...EX_RANKS, ...ASTRA_RANKS, "Undefined"];
 
     const HP_PARTS = { Tête: 0.10, Torse: 0.20, "Bras gauche": 0.12, "Bras droit": 0.12, "Main gauche": 0.05, "Main droite": 0.05, "Jambe gauche": 0.13, "Jambe droite": 0.13, "Pied gauche": 0.05, "Pied droit": 0.05 };
-    const AC_PARTS = { Tête: 0.05, Torse: 0.05, "Bras gauche": 0.10, "Bras droit": 0.10, "Main gauche": 0.04, "Main droite": 0.04, "Jambe gauche": 0.10, "Jambe droite": 0.10, "Pied gauche": 0.03, "Pied droit": 0.03 };
 
-    const defaultItem = () => ({ nom: "", description: "", notes: "" });
+    const ITEM_CATEGORIES = ["Équipement", "Objets de valeurs", "Module"];
+    const ITEM_FILTERS = [...ITEM_CATEGORIES, "Tout"];
+    const EQUIPMENT_REQUIREMENT_STATS = ["Force", "Constitution", "Intelligence", "Sagesse"];
+
+    const defaultItem = (number = 1) => ({ nom: String(number), description: "", notes: "", categorie: ITEM_CATEGORIES[0], rank: "None", equippePar: "none", prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, "None"])) });
+    function normalizeItemName(type, rawName, index) {
+      const fallback = String(index + 1);
+      if (rawName == null || String(rawName).trim() === "") return fallback;
+      const name = String(rawName).trim();
+      const matchEquip = name.match(/^Objets?\s*#\s*(\d+)$/i);
+      const matchVehicle = name.match(/^V[ée]hicule\s*#\s*(\d+)$/i);
+      if (type === "equipements" && matchEquip) return matchEquip[1];
+      if (type === "vehicules" && matchVehicle) return matchVehicle[1];
+      return name;
+    }
     const parseStoredXp = (value) => {
       if (typeof value === "bigint") return value > 0n ? value : 1n;
       if (typeof value === "string" && /^\d+$/.test(value.trim())) {
@@ -153,20 +160,30 @@
       nom: "",
       bio: [""],
       notes: [""],
-      stats: Object.fromEntries(STATS.map(s => [s, { xp: "1" }])),
-      hpCurrent: {}
+      stats: Object.fromEntries(STATS.map(s => [s, { level: 1, rank: "None" }])),
+      hpCurrent: {},
+      hpTemporaire: 0
     });
     const makeState = () => ({
       personnage: makeCharacter(),
-      compagnons: [makeCharacter()],
+      compagnons: [],
       sections: {
-        equipements: { items: [defaultItem()] },
-        vehicules: { items: [defaultItem()] }
+        equipements: {
+          items: [defaultItem(1)],
+          monnaies: {
+            pointEchange: 0,
+            pieceEnergie: 0,
+            monnaieLocale: 0
+          },
+          filtreCategorie: "Tout",
+          searchInput: "",
+          searchTerm: ""
+        },
+        vehicules: { items: [defaultItem(1)] }
       }
     });
 
     let state = makeState();
-    const nextXpCache = new Map();
 
     const rankToValue = (rankLabel) => {
       const idx = RANKS.indexOf(rankLabel);
@@ -197,98 +214,76 @@
       return n.toLocaleString("fr-FR", { useGrouping: false, maximumFractionDigits: 0 });
     }
 
-    function computeProgressCore(totalXp) {
-      const xp = parseStoredXp(totalXp);
-      let temp = xp;
+    function legacyProgressFromXp(totalXp) {
+      const multipliers = [2, 2, 3, 2, 3, 2, 2, 2, 3];
+      let xp = parseStoredXp(totalXp);
       let level = 1;
       let rankIdx = 0;
       while (true) {
         if (level <= 9) {
-          const need = BigInt(MULTIPLIERS[level - 1]);
-          if (temp < need) break;
-          temp /= need;
+          const need = BigInt(multipliers[level - 1]);
+          if (xp < need) break;
+          xp /= need;
           level++;
           continue;
         }
-
         if (rankIdx >= RANKS.length - 1) break;
         level = 1;
         rankIdx++;
-        temp /= 2n;
-
-        if (rankIdx >= RANKS.length - 1) {
-          rankIdx = RANKS.length - 1;
-          break;
-        }
+        xp /= 2n;
       }
-      const rank = RANKS[rankIdx] || RANKS[RANKS.length - 1];
-      return { xp, level, rank, rankValue: rankToValue(rank) };
+      return { level, rank: RANKS[rankIdx] || "None" };
     }
 
-    function computeProgress(totalXp, withNext = false) {
-      const base = computeProgressCore(totalXp);
-      if (!withNext) return { ...base, xpNext: null };
-      return { ...base, xpNext: nextXpToAdvance(base.xp, base.level, base.rank) };
-    }
-
-    function nextXpToAdvance(currentXp, currentLevel, currentRank) {
-      if (currentRank === RANKS[RANKS.length - 1]) return null;
-      const xp = parseStoredXp(currentXp);
-      const cacheKey = `${xp.toString()}|${currentLevel}|${currentRank}`;
-      if (nextXpCache.has(cacheKey)) return nextXpCache.get(cacheKey);
-      const hasChanged = (candidateXp) => {
-        const p = computeProgressCore(candidateXp);
-        return p.level !== currentLevel || p.rank !== currentRank;
-      };
-
-      let low = xp + 1n;
-      let high = low;
-      while (!hasChanged(high)) {
-        high *= 2n;
+    function getStatProgress(statData) {
+      const fallback = { level: 1, rank: "None" };
+      if (!statData || typeof statData !== "object") return fallback;
+      if (statData.level != null || statData.rank != null) {
+        const level = Math.min(10, Math.max(1, Math.floor(Number(statData.level) || 1)));
+        const rank = RANKS.includes(statData.rank) ? statData.rank : "None";
+        return { level, rank };
       }
-
-      while (low < high) {
-        const mid = (low + high) / 2n;
-        if (hasChanged(mid)) {
-          high = mid;
-        } else {
-          low = mid + 1n;
-        }
+      if (statData.xp != null) {
+        return legacyProgressFromXp(statData.xp);
       }
-      nextXpCache.set(cacheKey, low);
-      return low;
+      return fallback;
     }
 
     function computeHP(entity) {
-      const con = computeProgress(entity.stats.Constitution.xp, false);
-      const c = Number(con.xp) * con.level * con.rankValue;
-      const total = Math.floor(c * 100);
+      const con = getStatProgress(entity.stats.Constitution);
+      const isUndefinedRank = con.rank === "Undefined";
+      if (isUndefinedRank) {
+        const parts = {};
+        Object.keys(HP_PARTS).forEach(part => {
+          if (entity.hpCurrent[part] == null) entity.hpCurrent[part] = 1;
+          entity.hpCurrent[part] = Math.max(1, Math.floor(Number(entity.hpCurrent[part]) || 1));
+          parts[part] = { max: null, current: entity.hpCurrent[part] };
+        });
+        return { total: null, currentTotal: 1, parts, isUndefinedRank: true };
+      }
+
+      const total = Math.max(1, Math.floor(100 * con.level * (rankToValue(con.rank) ** 2)));
       const parts = {};
+      let currentTotal = 0;
       Object.entries(HP_PARTS).forEach(([part, ratio]) => {
-        const max = Math.floor(total * ratio);
+        const max = Math.max(1, Math.floor(total * ratio));
         if (entity.hpCurrent[part] == null) entity.hpCurrent[part] = max;
         entity.hpCurrent[part] = Math.max(0, Math.min(Number(entity.hpCurrent[part]) || 0, max));
+        currentTotal += entity.hpCurrent[part];
         parts[part] = { max, current: entity.hpCurrent[part] };
       });
-      return { total, parts };
+      return { total, currentTotal, parts, isUndefinedRank: false };
     }
 
-    function computeAC(entity) {
-      const v = computeProgress(entity.stats.Vitesse.xp, false);
-      const f = computeProgress(entity.stats.Force.xp, false);
-      const c = computeProgress(entity.stats.Constitution.xp, false);
-      const fcSum = Math.max(1, (f.rankValue + c.rankValue));
-      const speedPower = Number(v.xp) * v.level;
-      const base = v.rankValue <= fcSum
-        ? speedPower * v.rankValue
-        : speedPower * fcSum;
-      const total = Math.floor(base * 100);
-      const parts = Object.fromEntries(Object.entries(AC_PARTS).map(([p, ratio]) => [p, Math.floor(total * ratio)]));
-      return { total, general: Math.floor(total * 0.36), parts, fcSum, vRank: v.rankValue };
+    function regenPerHour(partMax, partCurrent) {
+      const hpTotal = Math.max(1, Number(partMax) || 1);
+      const hpActuel = Math.max(0, Number(partCurrent) || 0);
+      const gain = Math.floor(((hpActuel * hpActuel) / hpTotal) * (hpActuel / hpTotal));
+      return Math.max(1, gain);
     }
 
     function globalRankValue(entity) {
-      const sum = STATS.reduce((acc, stat) => acc + computeProgress(entity.stats[stat].xp, false).rankValue, 0);
+      const sum = STATS.reduce((acc, stat) => acc + rankToValue(getStatProgress(entity.stats[stat]).rank), 0);
       return Math.floor(sum / STATS.length);
     }
 
@@ -302,33 +297,29 @@
 
     function renderCharacterPanel(entity, path, key, title, icon, removable = false, removeAction = "", editableHeaderName = false, showNameField = true) {
       const hp = computeHP(entity);
-      const ac = computeAC(entity);
       const rankGlobalVal = globalRankValue(entity);
       const rankGlobal = valueToRank(rankGlobalVal);
 
       const statsHtml = STATS.map(stat => {
-        const p = computeProgress(entity.stats[stat].xp, true);
-        const nextDisplay = p.xpNext ? (p.xpNext - p.xp) : null;
+        const progress = getStatProgress(entity.stats[stat]);
         return `
           <div class="card">
             <h4>${stat}</h4>
-            <div>XP actuel: <strong>${formatLarge(p.xp)}</strong> <span class="small">(${formatRaw(p.xp)})</span></div>
-            <div>XP vers niveau/rank suivant: <strong>${nextDisplay == null ? "—" : formatLarge(nextDisplay)}</strong>${nextDisplay == null ? "" : ` <span class="small">(${formatRaw(nextDisplay)})</span>`}</div>
-            <div>Niveau: <strong>${p.level}</strong></div>
-            <div>Rank: <strong>${p.rank}</strong></div>
+            <label>Niveau</label>
+            <select onchange="updateStatProgress('${key}', '${stat}', 'level', this.value)">${Array.from({ length: 10 }, (_, i) => i + 1).map(level => `<option value="${level}" ${progress.level === level ? "selected" : ""}>${level}</option>`).join("")}</select>
+            <label>Rank</label>
+            <select onchange="updateStatProgress('${key}', '${stat}', 'rank', this.value)">${RANKS.map(rank => `<option value="${rank}" ${progress.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
           </div>`;
       }).join("");
 
       const hpHtml = Object.entries(hp.parts).map(([part, val]) => `
         <div class="card">
           <div>${part}</div>
-          <div class="small">HP max: ${formatLarge(val.max)} (${formatRaw(val.max)})</div>
-          <input type="number" min="0" max="${val.max}" value="${val.current}"
+          <div class="small">HP max: ${val.max == null ? "?" : `${formatLarge(val.max)} (${formatRaw(val.max)})`}</div>
+          <input type="number" min="0" ${val.max == null ? "" : `max="${val.max}"`} value="${val.current}"
             oninput="${path}.hpCurrent['${part}']=Number(this.value)||0; save();" />
           <div class="small">HP actuel: ${formatLarge(val.current)} (${formatRaw(val.current)})</div>
         </div>`).join("");
-
-      const acHtml = Object.entries(ac.parts).map(([part, value]) => `<div class="card">${part}: <strong>${formatLarge(value)}</strong> <span class="small">(${formatRaw(value)})</span></div>`).join("");
 
       return `
         <div class="card">
@@ -353,40 +344,23 @@
           <h3>Statistiques</h3>
           <div class="grid">${statsHtml}</div>
 
-          <h3>HP (total ${formatLarge(hp.total)} / ${formatRaw(hp.total)})</h3>
+          <h3>HP (total ${hp.isUndefinedRank ? "1" : formatLarge(hp.currentTotal)} / ${hp.isUndefinedRank ? "?" : formatRaw(hp.total)})</h3>
+          <div class="card">
+            <label>HP temporaire (n'affecte pas les zones et ne se régénère pas)</label>
+            <input type="number" step="1" value="${Number(entity.hpTemporaire) || 0}" oninput="${path}.hpTemporaire=Number(this.value)||0; save();" />
+          </div>
           <div class="card">
             <div class="line">
               <input id="restHours_${key}" type="number" min="0" step="1" value="1" />
               <button class="fit" onclick="applyRestRecovery('${key}')">Récupérer HP (repos)</button>
             </div>
-            <div class="small">Récupération / heure: (HP actuel ÷ (HP max - HP actuel)) × (Level Constitution × Rank Constitution), arrondi normal</div>
+            <div class="small">Régénération par zone et par heure: gain/h = ((HPactuel²)/HPmax) × (HPactuel/HPmax), arrondi inférieur, minimum 1</div>
           </div>
           <div class="body-grid">${hpHtml}</div>
-
-          <h3>AC</h3>
-          <div class="body-grid">${acHtml}</div>
-          <div class="card">
-            AC général: <strong>${formatLarge(ac.general)}</strong> <span class="small">(${formatRaw(ac.general)})</span>
-            <div class="small">36% du total AC: ${formatLarge(ac.total)} (${formatRaw(ac.total)})</div>
-            <div class="small">Formule: si Rankv ≤ (Rankf + Rankc) → AC = XPv × Lv × Rankv</div>
-            <div class="small">Sinon (pénalisation): AC = XPv × Lv × (Rankf + Rankc)</div>
-          </div>
 
           <h3>Notes</h3>
           ${renderTextArray(entity.notes, `${path}.notes`)}
           <button onclick="${path}.notes.push(''); render();">+ Ajouter une note</button>
-
-          <div class="card">
-            <h4>Ajouter de l'XP</h4>
-            <div class="line">
-              <select id="xpStat_${key}">${STATS.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
-              <input id="xpValue_${key}" type="number" min="0" step="1" value="1" />
-              <select id="xpUnit_${key}">
-                ${XP_UNITS.map(u => `<option value="${u.key}">${u.label}</option>`).join("")}
-              </select>
-              <button class="fit" onclick="addXPTo('${key}')">Ajouter</button>
-            </div>
-          </div>
         </div>
       `;
     }
@@ -410,22 +384,88 @@
     function renderEntitySection(type, title, icon) {
       const wrap = document.getElementById(type);
       const section = state.sections[type];
-      const renderItem = (item, label, onPath, idx) => `
+      const renderItem = (item, onPath, idx) => `
         <div class="card">
-          <h4>${label}</h4>
           <label>Nom</label>
           <input value="${escapeHtml(item.nom)}" oninput="${onPath}.nom=this.value; save();" />
+          ${type === "equipements" ? `
+            <label>Catégorie</label>
+            <select onchange="${onPath}.categorie=this.value; save(); render();">${ITEM_CATEGORIES.map(cat => `<option value="${cat}" ${item.categorie === cat ? "selected" : ""}>${cat}</option>`).join("")}</select>
+            <label>Rank</label>
+            <select onchange="${onPath}.rank=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${item.rank === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+            ${item.categorie === "Équipement" ? `
+              <div class="card">
+                <h4>Prérequis d'équipement</h4>
+                ${EQUIPMENT_REQUIREMENT_STATS.map(stat => `
+                  <label>${stat} requis</label>
+                  <select onchange="${onPath}.prerequisRanks['${stat}']=this.value; save();">${RANKS.map(rank => `<option value="${rank}" ${(item.prerequisRanks?.[stat] || "None") === rank ? "selected" : ""}>${rank}</option>`).join("")}</select>
+                `).join("")}
+              </div>
+            ` : ""}
+          ` : ""}
           <label>Description</label>
           <textarea oninput="${onPath}.description=this.value; save();">${escapeHtml(item.description)}</textarea>
           <label>Notes</label>
           <textarea oninput="${onPath}.notes=this.value; save();">${escapeHtml(item.notes)}</textarea>
+          ${type === "equipements" && item.categorie === "Équipement" ? `
+            <label>Équipé par</label>
+            <select onchange="${onPath}.equippePar=this.value; save();">
+              <option value="none" ${item.equippePar === "none" || item.equippePar == null ? "selected" : ""}>Non-équipé</option>
+              <option value="personnage" ${item.equippePar === "personnage" ? "selected" : ""}>Personnage (${escapeHtml(state.personnage.nom || "Sans nom")})</option>
+              ${state.compagnons.map((companion, idx) => `<option value="compagnon_${idx}" ${item.equippePar === `compagnon_${idx}` ? "selected" : ""}>Compagnon ${idx + 1} (${escapeHtml(companion.nom || "Sans nom")})</option>`).join("")}
+            </select>
+          ` : ""}
           <button class='danger' onclick="removeExtra('${type}', ${idx})">Supprimer</button>
         </div>`;
 
       const items = Array.isArray(section.items) ? section.items : [];
-      const itemsHtml = items.map((item, i) => renderItem(item, `${title} #${i + 1}`, `state.sections.${type}.items[${i}]`, i)).join("");
+      const filteredItems = type === "equipements"
+        ? items.filter(item => {
+            const categoryOk = section.filtreCategorie === "Tout" || item.categorie === section.filtreCategorie;
+            const term = (section.searchTerm || "").trim().toLowerCase();
+            const searchOk = !term || [item.nom, item.description, item.notes, item.categorie, item.rank].some(v => String(v || "").toLowerCase().includes(term));
+            return categoryOk && searchOk;
+          })
+        : items;
+      const itemsHtml = filteredItems.map((item) => {
+        const realIdx = items.indexOf(item);
+        return renderItem(item, `state.sections.${type}.items[${realIdx}]`, realIdx);
+      }).join("");
+
+      const equipementsTools = type === "equipements" ? `
+        <div class="card">
+          <h3>💱 Valeurs</h3>
+          <div class="values-stack">
+            <div>
+              <label>Point d'échange</label>
+              <input type="number" step="1" value="${section.monnaies.pointEchange}" oninput="state.sections.equipements.monnaies.pointEchange=Number(this.value)||0; save();" />
+            </div>
+            <div>
+              <label>Pièce d'énergie</label>
+              <input type="number" step="1" value="${section.monnaies.pieceEnergie}" oninput="state.sections.equipements.monnaies.pieceEnergie=Number(this.value)||0; save();" />
+            </div>
+            <div>
+              <label>Monnaie locale</label>
+              <input type="number" step="1" value="${section.monnaies.monnaieLocale}" oninput="state.sections.equipements.monnaies.monnaieLocale=Number(this.value)||0; save();" />
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Filtres</h3>
+          <div class="line">
+            <label class="fit">Catégorie</label>
+            <select onchange="state.sections.equipements.filtreCategorie=this.value; render();">${ITEM_FILTERS.map(cat => `<option value="${cat}" ${section.filtreCategorie === cat ? "selected" : ""}>${cat}</option>`).join("")}</select>
+          </div>
+          <div class="line">
+            <input value="${escapeHtml(section.searchInput || "")}" placeholder="Recherche..." oninput="state.sections.equipements.searchInput=this.value; save();" />
+            <button class="fit" onclick="applyEquipementSearch()">Rechercher</button>
+          </div>
+        </div>
+      ` : "";
+
       wrap.innerHTML = `
         <h2>${icon} ${title}</h2>
+        ${equipementsTools}
         ${itemsHtml || "<div class='small'>Aucun élément.</div>"}
       `;
     }
@@ -434,31 +474,41 @@
       return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
     }
 
-    function addXPTo(key) {
-      const stat = document.getElementById(`xpStat_${key}`)?.value;
-      const rawInput = document.getElementById(`xpValue_${key}`)?.value ?? "0";
-      const normalizedInput = rawInput.replace(",", ".");
-      const xpFloat = Number(normalizedInput);
-      const xp = Number.isFinite(xpFloat) ? Math.floor(xpFloat) : 0;
-      const unitKey = document.getElementById(`xpUnit_${key}`)?.value || "";
-      const selectedUnit = XP_UNITS.find(u => u.key === unitKey) || XP_UNITS[0];
-      const totalToAdd = BigInt(Math.max(0, xp)) * selectedUnit.value;
-      if (!stat || xp < 0) return;
-      if (xpFloat !== xp) {
-        alert("Les décimales ne sont pas autorisées pour l'XP. La valeur a été arrondie à l'entier inférieur.");
+    function getEntityByKey(key) {
+      if (key === "personnage") return state.personnage;
+      if (key.startsWith("compagnon_")) return state.compagnons[Number(key.replace("compagnon_", ""))];
+      return null;
+    }
+
+    function updateStatProgress(key, stat, field, rawValue) {
+      const target = getEntityByKey(key);
+      if (!target || !target.stats?.[stat]) return;
+
+      const oldHp = computeHP(target);
+      const oldParts = Object.fromEntries(Object.entries(oldHp.parts).map(([part, values]) => [part, { ...values }]));
+      const wasFull = !oldHp.isUndefinedRank && Object.values(oldParts).every(values => values.max != null && values.current >= values.max);
+
+      if (field === "level") {
+        target.stats[stat].level = Math.min(10, Math.max(1, Math.floor(Number(rawValue) || 1)));
+      } else if (field === "rank") {
+        target.stats[stat].rank = RANKS.includes(rawValue) ? rawValue : "None";
+        target.stats[stat].level = 1;
       }
-      const target = key === "personnage"
-        ? state.personnage
-        : state.compagnons[Number(key.replace("compagnon_", ""))];
-      if (!target) return;
-      let updatedXp = parseStoredXp(target.stats[stat].xp) + totalToAdd;
-      if (selectedUnit.value >= 1000n) {
-        const remainder = updatedXp % selectedUnit.value;
-        if (remainder > 0n && remainder < 1000n) {
-          updatedXp -= remainder;
+
+      const newHp = computeHP(target);
+      for (const [part, values] of Object.entries(newHp.parts)) {
+        if (values.max == null) {
+          target.hpCurrent[part] = 1;
+          continue;
         }
+        if (wasFull) {
+          target.hpCurrent[part] = values.max;
+          continue;
+        }
+        const oldValues = oldParts[part] || { current: values.max, max: values.max };
+        const ratio = oldValues.max != null && oldValues.max > 0 ? oldValues.current / oldValues.max : 1;
+        target.hpCurrent[part] = Math.max(0, Math.min(values.max, Math.floor(values.max * ratio)));
       }
-      target.stats[stat].xp = updatedXp.toString();
       render();
     }
 
@@ -470,18 +520,12 @@
         : state.compagnons[Number(key.replace("compagnon_", ""))];
       if (!target) return;
 
-      const con = computeProgress(target.stats.Constitution.xp, false);
-      const constitutionScale = Math.max(1, con.level * con.rankValue);
       const hp = computeHP(target);
-
       for (let i = 0; i < hours; i++) {
         for (const [part, values] of Object.entries(hp.parts)) {
+          if (values.max == null) continue;
           const current = Number(target.hpCurrent[part]) || 0;
-          const missing = Math.max(0, values.max - current);
-          if (missing <= 0) continue;
-
-          const rawGain = (current / missing) * constitutionScale;
-          const gain = Math.max(1, Math.round(rawGain));
+          const gain = regenPerHour(values.max, current);
           target.hpCurrent[part] = Math.min(values.max, current + gain);
         }
       }
@@ -490,6 +534,7 @@
 
     function addCompanion() {
       state.compagnons.push(makeCharacter());
+      document.getElementById("compagnons")?.classList.remove("hidden");
       render();
     }
 
@@ -500,7 +545,13 @@
     }
 
     function addExtra(type) {
-      state.sections[type].items.push(defaultItem());
+      const nextNumber = state.sections[type].items.length + 1;
+      state.sections[type].items.push(defaultItem(nextNumber));
+      render();
+    }
+
+    function applyEquipementSearch() {
+      state.sections.equipements.searchTerm = state.sections.equipements.searchInput || "";
       render();
     }
 
@@ -518,6 +569,7 @@
       if (!confirm("Confirmer la réinitialisation complète ? Toutes les données seront supprimées.")) return;
       state = makeState();
       localStorage.removeItem(STORAGE_KEY);
+      document.getElementById("compagnons")?.classList.add("hidden");
       render();
     }
 
@@ -551,11 +603,13 @@
       const normalized = { ...baseCharacter, ...(raw || {}) };
       normalized.stats = { ...baseCharacter.stats, ...(raw?.stats || {}) };
       for (const stat of STATS) {
-        normalized.stats[stat] = { xp: parseStoredXp(normalized.stats[stat]?.xp).toString() };
+        const progress = getStatProgress(normalized.stats[stat]);
+        normalized.stats[stat] = { level: progress.level, rank: progress.rank };
       }
       normalized.bio = Array.isArray(normalized.bio) && normalized.bio.length ? normalized.bio : [""];
       normalized.notes = Array.isArray(normalized.notes) && normalized.notes.length ? normalized.notes : [""];
       normalized.hpCurrent = { ...(raw?.hpCurrent || {}) };
+      normalized.hpTemporaire = Number(raw?.hpTemporaire) || 0;
       return normalized;
     }
 
@@ -577,8 +631,37 @@
               ...(parsed?.sections?.[type]?.base ? [parsed.sections[type].base] : []),
               ...(Array.isArray(parsed?.sections?.[type]?.extras) ? parsed.sections[type].extras : [])
             ];
+        const normalizedItems = parsedItems.length
+          ? parsedItems.map((x, i) => ({
+              ...defaultItem(i + 1),
+              ...x,
+              nom: normalizeItemName(type, x?.nom, i),
+              categorie: ITEM_CATEGORIES.includes(x?.categorie) ? x.categorie : ITEM_CATEGORIES[0],
+              rank: RANKS.includes(x?.rank) ? x.rank : "None",
+              equippePar: typeof x?.equippePar === "string" ? x.equippePar : (typeof x?.equipePar === "string" ? x.equipePar : "none"),
+              prerequisRanks: Object.fromEntries(EQUIPMENT_REQUIREMENT_STATS.map(stat => [stat, RANKS.includes(x?.prerequisRanks?.[stat]) ? x.prerequisRanks[stat] : "None"]))
+            }))
+          : [defaultItem(1)];
+
+        if (type === "equipements") {
+          merged.sections[type] = {
+            items: normalizedItems,
+            monnaies: {
+              pointEchange: Number(parsed?.sections?.equipements?.monnaies?.pointEchange) || 0,
+              pieceEnergie: Number(parsed?.sections?.equipements?.monnaies?.pieceEnergie) || 0,
+              monnaieLocale: Number(parsed?.sections?.equipements?.monnaies?.monnaieLocale) || 0
+            },
+            filtreCategorie: ITEM_FILTERS.includes(parsed?.sections?.equipements?.filtreCategorie)
+              ? parsed.sections.equipements.filtreCategorie
+              : "Tout",
+            searchInput: String(parsed?.sections?.equipements?.searchInput || ""),
+            searchTerm: String(parsed?.sections?.equipements?.searchTerm || "")
+          };
+          continue;
+        }
+
         merged.sections[type] = {
-          items: parsedItems.length ? parsedItems.map(x => ({ ...defaultItem(), ...x })) : [defaultItem()]
+          items: normalizedItems
         };
       }
       return merged;
@@ -596,10 +679,9 @@
     }
 
     function render() {
-      nextXpCache.clear();
       renderPersonnage();
       renderCompagnons();
-      renderEntitySection("equipements", "Équipement", "🧰");
+      renderEntitySection("equipements", "Objets", "🧰");
       renderEntitySection("vehicules", "Véhicule", "🚗");
       save();
     }
