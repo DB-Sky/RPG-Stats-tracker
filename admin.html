@@ -548,23 +548,41 @@
       return Math.max(1, machine.structure.level * (rankToValue(machine.structure.rank) ** 2));
     }
 
-    function moduleDemandValue(module) {
-      return rankToValue(module.moduleSlotRank || 'None');
+    function rankIndex(rank) {
+      const idx = RANKS.indexOf(rank);
+      return idx >= 0 ? idx : 0;
     }
 
-    function energyDemandValue(module) {
-      return rankToValue(module.moduleEnergyRank || 'None');
+    function buildCapacityByRank(entries, rankKey, countKey, typeFilter = null) {
+      const counts = Array.from({ length: RANKS.length }, () => 0n);
+      (entries || []).forEach(entry => {
+        if (typeFilter && (!Array.isArray(entry.types) || !entry.types.includes(typeFilter))) return;
+        const idx = rankIndex(entry?.[rankKey] || 'None');
+        const count = BigInt(Math.max(1, Math.floor(Number(entry?.[countKey]) || 1)));
+        counts[idx] += count;
+      });
+      return counts;
     }
 
-    function moduleCapacityValue(machine, moduleType) {
-      return (machine.moduleSlots || []).reduce((acc, slot) => {
-        if (!Array.isArray(slot.types) || !slot.types.includes(moduleType)) return acc;
-        return acc + Math.max(1, Number(slot.count) || 1) * rankToValue(slot.rank || 'None');
-      }, 0);
-    }
-
-    function energyCapacityValue(machine) {
-      return (machine.energySlots || []).reduce((acc, slot) => acc + Math.max(1, Number(slot.count) || 1) * rankToValue(slot.rank || 'None'), 0);
+    function canSatisfyStrictCapacity(capacityByRank, demandRanks) {
+      const available = capacityByRank.slice();
+      const demands = [...demandRanks].sort((a, b) => b - a);
+      for (const demandRankIdx of demands) {
+        let provider = -1;
+        for (let r = demandRankIdx; r < available.length; r++) {
+          if (available[r] > 0n) {
+            provider = r;
+            break;
+          }
+        }
+        if (provider < 0) return false;
+        available[provider] -= 1n;
+        if (provider > demandRankIdx) {
+          const produced = 1n << BigInt(provider - demandRankIdx);
+          available[demandRankIdx] += (produced - 1n);
+        }
+      }
+      return true;
     }
 
     function addModuleToMachine(type, machineIdx) {
@@ -579,12 +597,23 @@
 
       const already = Array.isArray(machine.equippedModules) ? machine.equippedModules : [];
       const equippedModules = already.map(i => state.sections.equipements.items[i]).filter(Boolean).filter(i => i.categorie === 'Module');
-      const currentModuleUsage = equippedModules.reduce((acc, m) => acc + moduleDemandValue(m), 0);
-      const currentEnergyUsage = equippedModules.reduce((acc, m) => acc + energyDemandValue(m), 0);
-      const nextModuleUsage = currentModuleUsage + moduleDemandValue(mod);
-      const nextEnergyUsage = currentEnergyUsage + energyDemandValue(mod);
-      if (nextModuleUsage > moduleCapacityValue(machine, mod.moduleType || 'utilitaire')) return alert('Capacité emplacement module insuffisante.');
-      if (nextEnergyUsage > energyCapacityValue(machine)) return alert('Capacité énergie insuffisante.');
+      const modulesAfterEquip = [...equippedModules, mod];
+      const moduleTypes = ['arme', 'protection', 'utilitaire'];
+      for (const typeKey of moduleTypes) {
+        const demands = modulesAfterEquip
+          .filter(m => (m.moduleType || 'utilitaire') === typeKey)
+          .map(m => rankIndex(m.moduleSlotRank || 'None'));
+        const capacity = buildCapacityByRank(machine.moduleSlots, 'rank', 'count', typeKey);
+        if (!canSatisfyStrictCapacity(capacity, demands)) {
+          return alert(`Capacité emplacement module insuffisante pour le type ${typeKey}.`);
+        }
+      }
+
+      const energyDemands = modulesAfterEquip.map(m => rankIndex(m.moduleEnergyRank || 'None'));
+      const energyCapacity = buildCapacityByRank(machine.energySlots, 'rank', 'count');
+      if (!canSatisfyStrictCapacity(energyCapacity, energyDemands)) {
+        return alert('Capacité énergie insuffisante.');
+      }
 
       machine.equippedModules = [...already, moduleIndex];
       render();
